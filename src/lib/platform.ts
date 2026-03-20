@@ -48,10 +48,10 @@ const slugifyValue = (value: string) =>
 export const buildSalonCode = (salonName: string, email: string) => {
   const emailBase = normalizeWorkspaceEmail(email).split('@')[0] || 'salone';
   const nameBase =
-    salonName.trim() && salonName.trim().toLowerCase() !== 'il tuo salone'
+    salonName.trim()
       ? slugifyValue(salonName)
       : slugifyValue(emailBase);
-  const emailSuffix = normalizeWorkspaceEmail(email).replace(/[^a-z0-9]/g, '').slice(-4) || 'demo';
+  const emailSuffix = normalizeWorkspaceEmail(email).replace(/[^a-z0-9]/g, '').slice(-4) || '0000';
 
   return `${nameBase || 'salone'}-${emailSuffix}`.slice(0, 36);
 };
@@ -112,10 +112,10 @@ export const createDefaultWorkspace = (email: string): SalonWorkspace => {
   const now = new Date().toISOString();
 
   return {
-    id: `workspace-${normalizedEmail.replace(/[^a-z0-9]/g, '-')}`,
+    id: normalizedEmail ? `workspace-${normalizedEmail.replace(/[^a-z0-9]/g, '-')}` : 'workspace-unconfigured',
     ownerEmail: normalizedEmail,
-    salonCode: buildSalonCode('Il tuo salone', normalizedEmail),
-    salonName: 'Il tuo salone',
+    salonCode: normalizedEmail ? buildSalonCode('', normalizedEmail) : '',
+    salonName: '',
     salonNameDisplayStyle: 'corsivo',
     salonNameFontVariant: 'neon',
     businessPhone: '',
@@ -126,8 +126,8 @@ export const createDefaultWorkspace = (email: string): SalonWorkspace => {
     streetNumber: '',
     city: '',
     postalCode: '',
-    subscriptionPlan: 'demo',
-    subscriptionStatus: 'demo',
+    subscriptionPlan: 'starter',
+    subscriptionStatus: 'active',
     createdAt: now,
     updatedAt: now,
     cashSectionDisabled: false,
@@ -181,4 +181,4 @@ export const normalizeWorkspace = (
 };
 
 export const isWorkspaceAccessible = (workspace: SalonWorkspace) =>
-  workspace.subscriptionStatus === 'demo' || workspace.subscriptionStatus === 'active';
+  workspace.subscriptionStatus === 'active';

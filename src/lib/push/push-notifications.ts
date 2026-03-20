@@ -109,11 +109,9 @@ const upsertPushTokenBackend = async ({
   }
 
   const { data: authSession } = await supabase.auth.getSession();
-  if (!authSession.session) {
-    return false;
-  }
+  const rpcName = authSession.session ? 'upsert_push_device' : 'upsert_public_push_device';
 
-  const { error } = await supabase.rpc('upsert_push_device', {
+  const { error } = await supabase.rpc(rpcName, {
     p_workspace_id: workspaceId,
     p_owner_email: ownerEmail,
     p_expo_push_token: token,
@@ -121,6 +119,10 @@ const upsertPushTokenBackend = async ({
     p_device_model: Device.modelName ?? null,
     p_app_version: Constants.expoConfig?.version ?? null,
   });
+
+  if (error) {
+    console.log('Errore sincronizzazione push device:', error);
+  }
 
   return !error;
 };
@@ -162,17 +164,19 @@ export const queueWorkspacePushNotification = async ({
   }
 
   const { data: authSession } = await supabase.auth.getSession();
-  if (!authSession.session) {
-    return false;
-  }
+  const rpcName = authSession.session ? 'queue_workspace_push' : 'queue_public_workspace_push';
 
-  const { error } = await supabase.rpc('queue_workspace_push', {
+  const { error } = await supabase.rpc(rpcName, {
     p_workspace_id: workspaceId,
     p_event_type: eventType,
     p_title: title,
     p_body: body,
     p_payload: payload,
   });
+
+  if (error) {
+    console.log('Errore accodamento push notification:', error);
+  }
 
   return !error;
 };

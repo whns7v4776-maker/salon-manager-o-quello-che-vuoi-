@@ -16,7 +16,6 @@ import { ClearableTextInput } from '../../components/ui/clearable-text-input';
 import { WheelDatePickerModal } from '../../components/ui/wheel-date-picker-modal';
 import { useAppContext } from '../../src/context/AppContext';
 import { useResponsiveLayout } from '../../src/lib/responsive';
-import { supabase } from '../../src/lib/supabase';
 
 type ClienteItem = {
   id: string;
@@ -88,8 +87,8 @@ export default function ClientiScreen() {
   const [showBirthdayPicker, setShowBirthdayPicker] = useState(false);
   const [ricerca, setRicerca] = useState('');
 
-  const [salonId, setSalonId] = useState<string | null>(null);
-  const [storageMode, setStorageMode] = useState<'local' | 'remote'>('local');
+  const [salonId, setSalonId] = useState<string | null>(salonWorkspace.id);
+  const [storageMode] = useState<'local'>('local');
   const [loadingInit, setLoadingInit] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -127,72 +126,32 @@ export default function ClientiScreen() {
   );
 
   const caricaClienti = useCallback(async (id: string) => {
-    const { data, error } = await supabase
-      .from('clients')
-      .select('*')
-      .eq('salon_id', id)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      Alert.alert('Errore', error.message);
-      return;
-    }
-
-    const nextClients = (data as ClienteItem[]) || [];
+    const nextClients = mapLocalClientsToScreen(localClienti, id);
     setClienti(nextClients);
     setLocalClienti(mapScreenClientsToLocal(nextClients));
-  }, [mapScreenClientsToLocal, setLocalClienti]);
+  }, [localClienti, mapLocalClientsToScreen, mapScreenClientsToLocal, setLocalClienti]);
 
   const init = useCallback(async () => {
     try {
       setLoadingInit(true);
 
-      const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession();
-
-      if (sessionError || !session) {
-        setStorageMode('local');
-        setSalonId(salonWorkspace.id);
-        setClienti(mapLocalClientsToScreen(localClienti, salonWorkspace.id));
-        setLoadingInit(false);
-        return;
-      }
-
-      const { data: salone, error: saloneError } = await supabase
-        .from('salons')
-        .select('id')
-        .eq('owner_user_id', session.user.id)
-        .limit(1)
-        .maybeSingle();
-
-      if (saloneError || !salone) {
-        setStorageMode('local');
-        setSalonId(salonWorkspace.id);
-        setClienti(mapLocalClientsToScreen(localClienti, salonWorkspace.id));
-        setLoadingInit(false);
-        return;
-      }
-
-      setStorageMode('remote');
-      setSalonId(salone.id);
-      await caricaClienti(salone.id);
+      setSalonId(salonWorkspace.id);
+      await caricaClienti(salonWorkspace.id);
       setLoadingInit(false);
     } catch (e: any) {
       Alert.alert('Errore init', e.message);
       setLoadingInit(false);
     }
-  }, [caricaClienti, localClienti, mapLocalClientsToScreen, salonWorkspace.id]);
+  }, [caricaClienti, salonWorkspace.id]);
 
   useEffect(() => {
-    init();
+    void init();
   }, [init]);
 
   useEffect(() => {
-    if (storageMode !== 'local') return;
+    setSalonId(salonWorkspace.id);
     setClienti(mapLocalClientsToScreen(localClienti, salonWorkspace.id));
-  }, [localClienti, mapLocalClientsToScreen, salonWorkspace.id, storageMode]);
+  }, [localClienti, mapLocalClientsToScreen, salonWorkspace.id]);
 
   useFocusEffect(
     useCallback(() => {
@@ -237,99 +196,48 @@ export default function ClientiScreen() {
     try {
       setSaving(true);
 
-      if (storageMode === 'local' || !salonId) {
-        if (clienteInModifica) {
-          setLocalClienti((current) =>
-            current.map((item) =>
-              item.id === clienteInModifica.id
-                ? {
-                    ...item,
-                    nome: nome.trim(),
-                    telefono: telefono.trim(),
-                    email: email.trim() || '',
-                    instagram: instagram.trim() || '',
-                    birthday: birthday.trim() || '',
-                  }
-                : item
-            )
-          );
-
-          setSaving(false);
-          pulisciCampi();
-          Alert.alert('OK', 'Cliente aggiornato');
-          return;
-        }
-
-        setLocalClienti((current) => [
-          {
-            id: `cliente-${Date.now()}`,
-            nome: nome.trim(),
-            telefono: telefono.trim(),
-            email: email.trim() || '',
-            instagram: instagram.trim() || '',
-            birthday: birthday.trim() || '',
-            nota: '',
-            fonte: 'salone',
-            viewedBySalon: true,
-            annullamentiCount: 0,
-            inibito: false,
-          },
-          ...current,
-        ]);
-
-        setSaving(false);
-        pulisciCampi();
-        Alert.alert('OK', 'Cliente aggiunto');
-        return;
-      }
-
       if (clienteInModifica) {
-        const { error } = await supabase
-          .from('clients')
-          .update({
-            full_name: nome.trim(),
-            phone: telefono.trim(),
-            email: email.trim() || null,
-            instagram: instagram.trim() || null,
-            birthday: birthday.trim() || null,
-          })
-          .eq('id', clienteInModifica.id)
-          .eq('salon_id', salonId);
+        setLocalClienti((current) =>
+          current.map((item) =>
+            item.id === clienteInModifica.id
+              ? {
+                  ...item,
+                  nome: nome.trim(),
+                  telefono: telefono.trim(),
+                  email: email.trim() || '',
+                  instagram: instagram.trim() || '',
+                  birthday: birthday.trim() || '',
+                }
+              : item
+          )
+        );
 
         setSaving(false);
-
-        if (error) {
-          Alert.alert('Errore aggiornamento', error.message);
-          return;
-        }
-
         pulisciCampi();
-        await caricaClienti(salonId);
         Alert.alert('OK', 'Cliente aggiornato');
         return;
       }
 
-      const { error } = await supabase.from('clients').insert([
+      setLocalClienti((current) => [
         {
-          full_name: nome.trim(),
-          phone: telefono.trim(),
-          email: email.trim() || null,
-          instagram: instagram.trim() || null,
-          birthday: birthday.trim() || null,
-          salon_id: salonId,
-          is_active: true,
+          id: `cliente-${Date.now()}`,
+          nome: nome.trim(),
+          telefono: telefono.trim(),
+          email: email.trim() || '',
+          instagram: instagram.trim() || '',
+          birthday: birthday.trim() || '',
+          nota: '',
+          fonte: 'salone',
+          viewedBySalon: true,
+          annullamentiCount: 0,
+          inibito: false,
         },
+        ...current,
       ]);
 
       setSaving(false);
 
-      if (error) {
-        Alert.alert('Errore inserimento', error.message);
-        return;
-      }
-
       pulisciCampi();
-      await caricaClienti(salonId);
       Alert.alert('OK', 'Cliente aggiunto');
     } catch (e: any) {
       setSaving(false);
@@ -344,29 +252,10 @@ export default function ClientiScreen() {
         text: 'Elimina',
         style: 'destructive',
         onPress: async () => {
-          if (storageMode === 'local' || !salonId) {
-            setLocalClienti((current) => current.filter((item) => item.id !== id));
-
-            if (clienteInModifica?.id === id) {
-              pulisciCampi();
-            }
-
-            return;
-          }
-
-          const { error } = await supabase.from('clients').delete().eq('id', id);
-
-          if (error) {
-            Alert.alert('Errore', error.message);
-            return;
-          }
+          setLocalClienti((current) => current.filter((item) => item.id !== id));
 
           if (clienteInModifica?.id === id) {
             pulisciCampi();
-          }
-
-          if (salonId) {
-            await caricaClienti(salonId);
           }
         },
       },
@@ -390,27 +279,11 @@ export default function ClientiScreen() {
           style: nextIsActive ? 'default' : 'destructive',
           onPress: async () => {
             try {
-              if (storageMode === 'local' || !salonId) {
-                setLocalClienti((current) =>
-                  current.map((item) =>
-                    item.id === cliente.id ? { ...item, inibito: !nextIsActive } : item
-                  )
-                );
-                return;
-              }
-
-              const { error } = await supabase
-                .from('clients')
-                .update({ is_active: nextIsActive })
-                .eq('id', cliente.id)
-                .eq('salon_id', salonId);
-
-              if (error) {
-                Alert.alert('Errore', error.message);
-                return;
-              }
-
-              await caricaClienti(salonId);
+              setLocalClienti((current) =>
+                current.map((item) =>
+                  item.id === cliente.id ? { ...item, inibito: !nextIsActive } : item
+                )
+              );
             } catch (error: any) {
               Alert.alert('Errore', error?.message || `Non sono riuscito a ${actionLabel} il cliente.`);
             }

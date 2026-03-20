@@ -2,7 +2,6 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import * as Haptics from 'expo-haptics';
-import * as ExpoLinking from 'expo-linking';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -24,21 +23,8 @@ import { ClearableTextInput } from '../../components/ui/clearable-text-input';
 import { useAppContext } from '../../src/context/AppContext';
 import { salonNameFontOptions } from '../../src/lib/fonts';
 import { getBiometricCopy, tApp } from '../../src/lib/i18n';
-import { formatSalonAddress, parseSalonAddress } from '../../src/lib/platform';
+import { formatSalonAddress } from '../../src/lib/platform';
 import { useResponsiveLayout } from '../../src/lib/responsive';
-import { supabase } from '../../src/lib/supabase';
-
-type SalonRecord = {
-  id: string;
-  name: string;
-  owner_user_id: string;
-  phone: string | null;
-  email: string | null;
-  address: string | null;
-  city: string | null;
-  country: string | null;
-  is_active: boolean | null;
-};
 
 const getTodayDateString = () => {
   const today = new Date();
@@ -108,7 +94,6 @@ export default function HomeScreen() {
     appuntamenti,
     movimenti,
     servizi,
-    resetDatiDemo,
     salonAccountEmail,
     salonWorkspace,
     setSalonWorkspace,
@@ -118,10 +103,8 @@ export default function HomeScreen() {
     appLanguage,
   } = useAppContext();
 
-  const [loadingSalon, setLoadingSalon] = useState(true);
+  const [loadingSalon, setLoadingSalon] = useState(false);
   const [savingSalon, setSavingSalon] = useState(false);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [salonRecordId, setSalonRecordId] = useState<string | null>(null);
 
   const [accountEmailInput, setAccountEmailInput] = useState(salonAccountEmail);
   const [salonNameInput, setSalonNameInput] = useState(salonWorkspace.salonName);
@@ -228,103 +211,6 @@ export default function HomeScreen() {
     setAccountEmailInput(salonAccountEmail);
   }, [salonAccountEmail]);
 
-  const syncWorkspaceFromSalon = useCallback(
-    (salon: SalonRecord) => {
-      const dbAddress = salon.address?.trim() ?? '';
-      const dbCity = salon.city?.trim() ?? '';
-      const dbPhone = salon.phone?.trim() ?? '';
-      const dbEmail = salon.email?.trim() ?? '';
-      const parsedAddress = parseSalonAddress(dbAddress);
-      const resolvedStreetLine = parsedAddress.streetLine || dbAddress;
-      const resolvedCity = parsedAddress.city || dbCity;
-      const resolvedPostalCode = parsedAddress.postalCode;
-
-      setSalonWorkspace((current) => ({
-        ...current,
-        salonName: salon.name?.trim() || current.salonName,
-        ownerEmail: dbEmail || salonAccountEmail || current.ownerEmail,
-        businessPhone: dbPhone || current.businessPhone,
-        activityCategory: current.activityCategory,
-        streetType: '',
-        streetName: resolvedStreetLine || current.streetName,
-        streetNumber: current.streetNumber,
-        city: resolvedCity || current.city,
-        postalCode: resolvedPostalCode || current.postalCode,
-        salonAddress: formatSalonAddress({
-          streetType: '',
-          streetName: resolvedStreetLine || current.streetName,
-          streetNumber: current.streetNumber,
-          city: resolvedCity || current.city,
-          postalCode: resolvedPostalCode || current.postalCode,
-          salonAddress: dbAddress || current.salonAddress,
-        }),
-        updatedAt: new Date().toISOString(),
-      }));
-
-      setSalonRecordId(salon.id);
-      setSalonNameInput(salon.name ?? '');
-      setBusinessPhoneInput(salon.phone ?? '');
-      setStreetLineInput(resolvedStreetLine);
-      setCityInput(toUppercaseField(resolvedCity));
-      setPostalCodeInput(resolvedPostalCode);
-      setAccountEmailInput(dbEmail || salonAccountEmail);
-    },
-    [salonAccountEmail, setSalonWorkspace]
-  );
-
-  const caricaSaloneDaSupabase = useCallback(async () => {
-    try {
-      setLoadingSalon(true);
-
-      const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession();
-
-      if (sessionError || !session?.user) {
-        setCurrentUserId(null);
-        setSalonRecordId(null);
-        setLoadingSalon(false);
-        return;
-      }
-
-      setCurrentUserId(session.user.id);
-
-      const { data, error } = await supabase
-        .from('salons')
-        .select('*')
-        .eq('owner_user_id', session.user.id)
-        .limit(1)
-        .maybeSingle();
-
-      if (error) {
-        setLoadingSalon(false);
-        Alert.alert('Errore caricamento', error.message);
-        return;
-      }
-
-      if (data) {
-        syncWorkspaceFromSalon(data as SalonRecord);
-      } else {
-        setSalonRecordId(null);
-      }
-
-      setLoadingSalon(false);
-    } catch (e: any) {
-      setLoadingSalon(false);
-      const message = String(e?.message ?? '');
-      if (
-        message.toLowerCase().includes('auth') ||
-        message.toLowerCase().includes('session')
-      ) {
-        setCurrentUserId(null);
-        setSalonRecordId(null);
-        return;
-      }
-      Alert.alert('Errore generale', e.message ?? 'Errore durante il caricamento del salone');
-    }
-  }, [syncWorkspaceFromSalon]);
-
   const salvaDatiSalone = async () => {
     if (
       !salonNameInput.trim() ||
@@ -353,94 +239,7 @@ export default function HomeScreen() {
         salonAddress: '',
       });
 
-      if (!currentUserId) {
-        setSavingSalon(false);
-        setSalonWorkspace((current) => ({
-          ...current,
-          salonName: salonNameInput.trim(),
-          salonNameDisplayStyle: salonNameDisplayStyleInput,
-          salonNameFontVariant: salonNameFontVariantInput,
-          ownerEmail: accountEmailInput.trim().toLowerCase(),
-          businessPhone: businessPhoneInput.trim(),
-          activityCategory: toUppercaseField(activityCategoryInput.trim()),
-          streetType: '',
-          streetName: toUppercaseField(streetLineInput.trim()),
-          streetNumber: '',
-          city: toUppercaseField(cityInput.trim()),
-          postalCode: postalCodeInput.trim(),
-          salonAddress: formattedAddress,
-          updatedAt: new Date().toISOString(),
-        }));
-
-        Alert.alert('Profilo salvato', 'Dati salone salvati sul profilo locale.');
-        setIsEditingSalonProfile(false);
-        setShowProfileSection(false);
-        return;
-      }
-
-      const payload = {
-        name: salonNameInput.trim(),
-        owner_user_id: currentUserId,
-        phone: businessPhoneInput.trim(),
-        email: accountEmailInput.trim().toLowerCase() || null,
-        address: formattedAddress,
-        city: toUppercaseField(cityInput.trim()),
-        country: 'Italia',
-        is_active: true,
-      };
-
-      if (salonRecordId) {
-        const { error } = await supabase
-          .from('salons')
-          .update(payload)
-          .eq('id', salonRecordId)
-          .eq('owner_user_id', currentUserId);
-
-        setSavingSalon(false);
-
-        if (error) {
-          Alert.alert('Errore aggiornamento', error.message);
-          return;
-        }
-
-        setSalonWorkspace((current) => ({
-          ...current,
-          salonName: salonNameInput.trim(),
-          salonNameDisplayStyle: salonNameDisplayStyleInput,
-          salonNameFontVariant: salonNameFontVariantInput,
-          ownerEmail: accountEmailInput.trim().toLowerCase(),
-          businessPhone: businessPhoneInput.trim(),
-          activityCategory: toUppercaseField(activityCategoryInput.trim()),
-          streetType: '',
-          streetName: toUppercaseField(streetLineInput.trim()),
-          streetNumber: '',
-          city: toUppercaseField(cityInput.trim()),
-          postalCode: postalCodeInput.trim(),
-          salonAddress: formattedAddress,
-          updatedAt: new Date().toISOString(),
-        }));
-
-        Alert.alert('Profilo aggiornato', 'Dati salone aggiornati con successo.');
-        setIsEditingSalonProfile(false);
-        setShowProfileSection(false);
-        await caricaSaloneDaSupabase();
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from('salons')
-        .insert([payload])
-        .select()
-        .single();
-
       setSavingSalon(false);
-
-      if (error) {
-        Alert.alert('Errore creazione', error.message);
-        return;
-      }
-
-      setSalonRecordId(data.id);
 
       setSalonWorkspace((current) => ({
         ...current,
@@ -459,10 +258,12 @@ export default function HomeScreen() {
         updatedAt: new Date().toISOString(),
       }));
 
-      Alert.alert('Profilo creato', 'Salone creato e collegato a Supabase.');
+      Alert.alert(
+        'Profilo salvato',
+        'Dati salone aggiornati. La pubblicazione verso il portale cliente avviene automaticamente.'
+      );
       setIsEditingSalonProfile(false);
       setShowProfileSection(false);
-      await caricaSaloneDaSupabase();
     } catch (e: any) {
       setSavingSalon(false);
       Alert.alert('Errore generale', e.message ?? 'Errore durante il salvataggio');
@@ -487,8 +288,9 @@ export default function HomeScreen() {
   };
 
   const aggiornaStatoWorkspace = (
-    status: 'demo' | 'active' | 'suspended' | 'expired',
-    plan: 'demo' | 'starter' | 'pro' = salonWorkspace.subscriptionPlan
+    status: 'active' | 'suspended' | 'expired',
+    plan: 'starter' | 'pro' =
+      salonWorkspace.subscriptionPlan === 'pro' ? 'pro' : 'starter'
   ) => {
     const formattedAddress = formatSalonAddress({
       streetType: '',
@@ -543,9 +345,7 @@ export default function HomeScreen() {
   ].filter((value) => value.trim() !== '').length;
 
   const brandName =
-    salonNameInput.trim() && salonNameInput !== 'Il tuo salone'
-      ? toUppercaseField(salonNameInput)
-      : 'SALON PRO';
+    salonNameInput.trim() ? toUppercaseField(salonNameInput) : 'SALON PRO';
   const publicClientBaseUrl = useMemo(() => {
     const extra = Constants.expoConfig?.extra as { publicClientBaseUrl?: string } | undefined;
     return extra?.publicClientBaseUrl?.trim().replace(/\/+$/, '') ?? '';
@@ -559,17 +359,9 @@ export default function HomeScreen() {
 
   const canEditSalonProfile = isEditingSalonProfile;
 
-  const salonClientDeepLink = useMemo(
-    () => ExpoLinking.createURL(salonClientJoinPath),
-    [salonClientJoinPath]
-  );
-
   const salonClientLink = useMemo(
-    () =>
-      hasPublicClientWeb
-        ? `${publicClientBaseUrl}${salonClientJoinPath}`
-        : salonClientDeepLink,
-    [hasPublicClientWeb, publicClientBaseUrl, salonClientDeepLink, salonClientJoinPath]
+    () => (hasPublicClientWeb ? `${publicClientBaseUrl}${salonClientJoinPath}` : ''),
+    [hasPublicClientWeb, publicClientBaseUrl, salonClientJoinPath]
   );
 
   const openFrontendPreviewForAdmin = useCallback(() => {
@@ -578,14 +370,6 @@ export default function HomeScreen() {
       params: { salon: salonWorkspace.salonCode },
     });
   }, [router, salonWorkspace.salonCode]);
-
-  useEffect(() => {
-    const init = async () => {
-      await caricaSaloneDaSupabase();
-    };
-
-    init();
-  }, [caricaSaloneDaSupabase]);
 
   const markBiometricPromptAsSeen = useCallback(async () => {
     if (!salonAccountEmail) return;
@@ -722,6 +506,14 @@ export default function HomeScreen() {
   );
 
   const condividiAccessoCliente = async () => {
+    if (!hasPublicClientWeb || !salonClientLink) {
+      Alert.alert(
+        'Link pubblico mancante',
+        'Imposta publicClientBaseUrl in app.json con l\'URL web pubblico definitivo prima di condividere il QR cliente.'
+      );
+      return;
+    }
+
     try {
       await Share.share({
         title: `Prenota da ${brandName}`,
@@ -1273,18 +1065,8 @@ export default function HomeScreen() {
               <Text style={styles.previewButtonText}>Anteprima frontend cliente (admin)</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.resetButton}
-              onPress={() => caricaSaloneDaSupabase()}
-              activeOpacity={0.9}
-            >
-              <Text style={styles.resetButtonText}>Ricarica da Supabase</Text>
-            </TouchableOpacity>
-
             <Text style={styles.accountHint}>Attuale: {salonAccountEmail}</Text>
-            <Text style={styles.accountHint}>
-              Record Supabase: {salonRecordId || 'Non creato'}
-            </Text>
+            <Text style={styles.accountHint}>Portale cliente: sincronizzazione automatica attiva</Text>
             <Text style={styles.accountHint}>Workspace: {salonWorkspace.id}</Text>
             <Text style={styles.accountHint}>
               Mail unica abbonamento: {salonWorkspace.ownerEmail}
@@ -1317,14 +1099,6 @@ export default function HomeScreen() {
             <View style={styles.adminStatusRow}>
               <TouchableOpacity
                 style={styles.adminStatusChip}
-                onPress={() => aggiornaStatoWorkspace('demo', 'demo')}
-                activeOpacity={0.9}
-              >
-                <Text style={styles.adminStatusChipText}>Demo</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.adminStatusChip}
                 onPress={() => aggiornaStatoWorkspace('active', 'starter')}
                 activeOpacity={0.9}
               >
@@ -1354,27 +1128,31 @@ export default function HomeScreen() {
               <Text style={styles.accessWarningTitle}>Frontend web cliente non ancora configurato</Text>
               <Text style={styles.accessWarningText}>
                 Per far entrare i clienti reali dal browser imposta publicClientBaseUrl in app.json con
-                l'URL pubblico del frontend web. Finché resta vuoto, QR e link continueranno ad aprire
-                l'app.
+                l'URL pubblico definitivo del frontend web. Finché resta vuoto, il QR prodotto non va condiviso.
               </Text>
             </View>
           ) : null}
 
           <View style={styles.accessCard}>
-            <Text style={styles.accessLabel}>{hasPublicClientWeb ? 'Link web cliente' : 'Codice salone'}</Text>
+            <Text style={styles.accessLabel}>Link web cliente</Text>
             <Text style={styles.accessCode}>{salonWorkspace.salonCode}</Text>
             <Text style={styles.accessLink} numberOfLines={2}>
-              {salonClientLink}
+              {salonClientLink || 'Configura publicClientBaseUrl per generare il link pubblico.'}
             </Text>
           </View>
 
           <View style={[styles.qrCard, responsive.isTablet && styles.qrCardResponsive]}>
-            <QRCode value={salonClientLink} size={170} color="#111111" backgroundColor="#ffffff" />
+            <QRCode
+              value={salonClientLink || 'https://configura-public-client-base-url.invalid'}
+              size={170}
+              color="#111111"
+              backgroundColor="#ffffff"
+            />
             <Text style={styles.qrTitle}>QR cliente del salone</Text>
             <Text style={styles.qrText}>
               {hasPublicClientWeb
                 ? 'Questo QR apre il frontend web cliente già collegato al tuo salone.'
-                : 'Questo QR è collegato al tuo salone, ma finché il link web non è configurato aprirà l\'app.'}
+                : 'Configura prima il link web pubblico definitivo, poi condividi questo QR ai clienti.'}
             </Text>
           </View>
 
@@ -1392,14 +1170,6 @@ export default function HomeScreen() {
           <Text style={[styles.sectionSubtext, styles.sectionSubtextCentered]}>
             Qui trovi solo strumenti interni del salone. L'anteprima cliente resta disponibile nel pannello admin nascosto.
           </Text>
-
-          <TouchableOpacity
-            style={styles.resetButton}
-            onPress={resetDatiDemo}
-            activeOpacity={0.9}
-          >
-            <Text style={styles.resetButtonText}>Reset dati demo</Text>
-          </TouchableOpacity>
         </View>
         </View>
       </ScrollView>

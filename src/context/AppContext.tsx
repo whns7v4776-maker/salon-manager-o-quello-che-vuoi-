@@ -2,26 +2,21 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
 import { AppState } from 'react-native';
 import {
-    appuntamentiIniziali,
-    clientiIniziali,
-    movimentiIniziali,
-    serviziIniziali,
-} from '../data/mockData';
-import {
-    AvailabilitySettings,
-    normalizeAvailabilitySettings,
-    OperatorAvailability,
-    OperatorAvailabilityRange,
+  AvailabilitySettings,
+  normalizeAvailabilitySettings,
+  OperatorAvailability,
+  OperatorAvailabilityRange,
 } from '../lib/booking';
+import { fetchClientPortalSnapshot, publishClientPortalSnapshot } from '../lib/client-portal';
 import { AppLanguage, resolveStoredAppLanguage } from '../lib/i18n';
 import {
-    buildSalonCode,
-    createDefaultWorkspace,
-    formatSalonAddress,
-    isWorkspaceAccessible,
-    normalizeSalonCode,
-    normalizeWorkspace,
-    SalonWorkspace,
+  buildSalonCode,
+  createDefaultWorkspace,
+  formatSalonAddress,
+  isWorkspaceAccessible,
+  normalizeSalonCode,
+  normalizeWorkspace,
+  SalonWorkspace,
 } from '../lib/platform';
 import { queueWorkspacePushNotification } from '../lib/push/push-notifications';
 
@@ -42,26 +37,13 @@ const STORAGE_KEYS = {
   richieste_prenotazione: 'salon_manager_richieste_prenotazione',
   availability_settings: 'salon_manager_availability_settings',
   operatori: 'salon_manager_operatori',
-  salon_registry: 'salon_manager_salon_registry',
   daily_auto_cashout: 'salon_manager_daily_auto_cashout',
 };
 
-const DEFAULT_ACCOUNT_EMAIL = 'demo@salonmanager.app';
-
 const normalizeAccountEmail = (value?: string | null) => value?.trim().toLowerCase() ?? '';
-const isDemoAccountEmail = (value?: string | null) =>
-  normalizeAccountEmail(value) === DEFAULT_ACCOUNT_EMAIL;
 
 const buildScopedStorageKey = (baseKey: string, accountEmail: string) =>
   `${baseKey}__${normalizeAccountEmail(accountEmail)}`;
-
-type SalonRegistryEntry = {
-  code: string;
-  accountEmail: string;
-  salonName: string;
-  salonAddress: string;
-  updatedAt: string;
-};
 
 type OwnerAccount = {
   firstName: string;
@@ -368,7 +350,6 @@ type AppContextType = {
     email: string;
     telefono: string;
   }) => Promise<{ ok: boolean; error?: string }>;
-  resetDatiDemo: () => void;
   isLoaded: boolean;
 };
 
@@ -378,16 +359,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [appLanguage, setAppLanguage] = useState<AppLanguage>('it');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
-  const [salonAccountEmail, setSalonAccountEmail] = useState(DEFAULT_ACCOUNT_EMAIL);
+  const [salonAccountEmail, setSalonAccountEmail] = useState('');
   const [salonWorkspace, setSalonWorkspace] = useState<SalonWorkspace>(
-    createDefaultWorkspace(DEFAULT_ACCOUNT_EMAIL)
+    createDefaultWorkspace('')
   );
-  const [clienti, setClienti] = useState<Cliente[]>(normalizeClienti(clientiIniziali));
-  const [appuntamenti, setAppuntamenti] = useState<Appuntamento[]>(
-    normalizeAppuntamenti(appuntamentiIniziali)
-  );
-  const [movimenti, setMovimenti] = useState<Movimento[]>(normalizeMovimenti(movimentiIniziali));
-  const [servizi, setServizi] = useState<Servizio[]>(normalizeServizi(serviziIniziali));
+  const [clienti, setClienti] = useState<Cliente[]>(normalizeClienti([]));
+  const [appuntamenti, setAppuntamenti] = useState<Appuntamento[]>(normalizeAppuntamenti([]));
+  const [movimenti, setMovimenti] = useState<Movimento[]>(normalizeMovimenti([]));
+  const [servizi, setServizi] = useState<Servizio[]>(normalizeServizi([]));
   const [operatori, setOperatori] = useState<Operatore[]>(normalizeOperatori([]));
   const [carteCollegate, setCarteCollegate] = useState<CartaCollegata[]>([]);
   const [eventi, setEventi] = useState<Evento[]>([]);
@@ -401,6 +380,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     'Ciao! Ti aspetto a {evento} il {data} alle {ora}. Scrivimi per conferma.'
   );
   const [isLoaded, setIsLoaded] = useState(false);
+
+  const isUuid = React.useCallback(
+    (value?: string | null) =>
+      !!value &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value),
+    []
+  );
 
   const clearRuntimeDataForAccount = React.useCallback((email: string) => {
     setSalonWorkspace(createDefaultWorkspace(email));
@@ -522,10 +508,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           AsyncStorage.getItem(STORAGE_KEYS.app_language),
         ]);
         const sessionEmail = normalizeAccountEmail(sessioneSalvata);
-        const normalizedAccount =
-          sessionEmail || normalizeAccountEmail(accountSalvato) || DEFAULT_ACCOUNT_EMAIL;
+        const normalizedAccount = sessionEmail || normalizeAccountEmail(accountSalvato);
 
-        if (!accountSalvato) {
+        if (!accountSalvato && normalizedAccount) {
           await AsyncStorage.setItem(STORAGE_KEYS.account_attivo, normalizedAccount);
         }
 
@@ -542,10 +527,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const caricaDatiAccount = async () => {
-      if (!salonAccountEmail) return;
+      if (!salonAccountEmail) {
+        clearRuntimeDataForAccount('');
+        setIsLoaded(true);
+        return;
+      }
 
       setIsLoaded(false);
-      const useDemoDefaults = isDemoAccountEmail(salonAccountEmail);
 
       try {
         const clientiSalvati = await AsyncStorage.getItem(
@@ -591,24 +579,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
             : createDefaultWorkspace(salonAccountEmail)
         );
         setClienti(
-          clientiSalvati
-            ? normalizeClienti(JSON.parse(clientiSalvati))
-            : normalizeClienti(useDemoDefaults ? clientiIniziali : [])
+          clientiSalvati ? normalizeClienti(JSON.parse(clientiSalvati)) : normalizeClienti([])
         );
         setAppuntamenti(
-          appuntamentiSalvati
-            ? normalizeAppuntamenti(JSON.parse(appuntamentiSalvati))
-            : normalizeAppuntamenti(useDemoDefaults ? appuntamentiIniziali : [])
+          appuntamentiSalvati ? normalizeAppuntamenti(JSON.parse(appuntamentiSalvati)) : normalizeAppuntamenti([])
         );
         setMovimenti(
-          movimentiSalvati
-            ? normalizeMovimenti(JSON.parse(movimentiSalvati))
-            : normalizeMovimenti(useDemoDefaults ? movimentiIniziali : [])
+          movimentiSalvati ? normalizeMovimenti(JSON.parse(movimentiSalvati)) : normalizeMovimenti([])
         );
         setServizi(
-          serviziSalvati
-            ? normalizeServizi(JSON.parse(serviziSalvati))
-            : normalizeServizi(useDemoDefaults ? serviziIniziali : [])
+          serviziSalvati ? normalizeServizi(JSON.parse(serviziSalvati)) : normalizeServizi([])
         );
         setOperatori(operatoriSalvati ? normalizeOperatori(JSON.parse(operatoriSalvati)) : []);
         setCarteCollegate(carteSalvate ? normalizeCarte(JSON.parse(carteSalvate)) : []);
@@ -629,10 +609,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         console.log('Errore caricamento dati account:', error);
         setSalonWorkspace(createDefaultWorkspace(salonAccountEmail));
-        setClienti(normalizeClienti(useDemoDefaults ? clientiIniziali : []));
-        setAppuntamenti(normalizeAppuntamenti(useDemoDefaults ? appuntamentiIniziali : []));
-        setMovimenti(normalizeMovimenti(useDemoDefaults ? movimentiIniziali : []));
-        setServizi(normalizeServizi(useDemoDefaults ? serviziIniziali : []));
+        setClienti(normalizeClienti([]));
+        setAppuntamenti(normalizeAppuntamenti([]));
+        setMovimenti(normalizeMovimenti([]));
+        setServizi(normalizeServizi([]));
         setOperatori(normalizeOperatori([]));
         setCarteCollegate([]);
         setEventi([]);
@@ -655,6 +635,67 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [appLanguage]);
 
   useEffect(() => {
+    if (!isLoaded) return;
+
+    const normalizedOwnerEmail = normalizeAccountEmail(
+      salonWorkspace.ownerEmail || salonAccountEmail
+    );
+    const normalizedSalonCode = normalizeSalonCode(salonWorkspace.salonCode);
+
+    if (!normalizedOwnerEmail || !normalizedSalonCode || !salonWorkspace.salonName.trim()) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const publishPortalSnapshot = async () => {
+      try {
+        const workspaceId = await publishClientPortalSnapshot({
+          workspace: {
+            ...salonWorkspace,
+            ownerEmail: normalizedOwnerEmail,
+            salonCode: normalizedSalonCode,
+          },
+          clienti: clienti as unknown as Array<Record<string, unknown>>,
+          appuntamenti: appuntamenti as unknown as Array<Record<string, unknown>>,
+          servizi: servizi as unknown as Array<Record<string, unknown>>,
+          operatori: operatori as unknown as Array<Record<string, unknown>>,
+          richiestePrenotazione:
+            richiestePrenotazione as unknown as Array<Record<string, unknown>>,
+          availabilitySettings,
+        });
+
+        if (!cancelled && workspaceId && workspaceId !== salonWorkspace.id) {
+          setSalonWorkspace((current) => ({
+            ...current,
+            id: workspaceId,
+            ownerEmail: normalizedOwnerEmail,
+            salonCode: normalizedSalonCode,
+          }));
+        }
+      } catch (error) {
+        console.log('Errore pubblicazione portale cliente:', error);
+      }
+    };
+
+    void publishPortalSnapshot();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    appuntamenti,
+    availabilitySettings,
+    clienti,
+    isLoaded,
+    operatori,
+    richiestePrenotazione,
+    salonAccountEmail,
+    salonWorkspace,
+    servizi,
+  ]);
+
+  useEffect(() => {
     if (!isLoaded || !salonAccountEmail) return;
     AsyncStorage.setItem(
       buildScopedStorageKey(STORAGE_KEYS.workspace, salonAccountEmail),
@@ -668,37 +709,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       })
     );
   }, [salonWorkspace, isLoaded, salonAccountEmail]);
-
-  useEffect(() => {
-    if (!isLoaded || !salonAccountEmail) return;
-
-    const saveSalonRegistry = async () => {
-      try {
-        const code =
-          normalizeSalonCode(salonWorkspace.salonCode) ||
-          buildSalonCode(salonWorkspace.salonName, salonAccountEmail);
-        const rawRegistry = await AsyncStorage.getItem(STORAGE_KEYS.salon_registry);
-        const parsedRegistry = rawRegistry ? (JSON.parse(rawRegistry) as SalonRegistryEntry[]) : [];
-        const nextEntry: SalonRegistryEntry = {
-          code,
-          accountEmail: salonAccountEmail,
-          salonName: salonWorkspace.salonName,
-          salonAddress: salonWorkspace.salonAddress,
-          updatedAt: new Date().toISOString(),
-        };
-        const nextRegistry = [
-          nextEntry,
-          ...parsedRegistry.filter((entry) => entry.code !== code),
-        ].sort((first, second) => second.updatedAt.localeCompare(first.updatedAt));
-
-        await AsyncStorage.setItem(STORAGE_KEYS.salon_registry, JSON.stringify(nextRegistry));
-      } catch (error) {
-        console.log('Errore salvataggio registro saloni:', error);
-      }
-    };
-
-    saveSalonRegistry();
-  }, [isLoaded, salonAccountEmail, salonWorkspace.salonAddress, salonWorkspace.salonCode, salonWorkspace.salonName]);
 
   useEffect(() => {
     if (!isLoaded || !salonAccountEmail) return;
@@ -1027,61 +1037,40 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     if (!normalizedCode) return null;
 
-    const targetAccountEmail =
-      normalizedCode === salonWorkspace.salonCode
-        ? salonAccountEmail
-        : (() => undefined)();
-
     try {
-      let resolvedEmail = targetAccountEmail;
+      const remoteSnapshot = await fetchClientPortalSnapshot(normalizedCode);
 
-      if (!resolvedEmail) {
-        const rawRegistry = await AsyncStorage.getItem(STORAGE_KEYS.salon_registry);
-        const parsedRegistry = rawRegistry ? (JSON.parse(rawRegistry) as SalonRegistryEntry[]) : [];
-        resolvedEmail = parsedRegistry.find((entry) => entry.code === normalizedCode)?.accountEmail;
+      if (remoteSnapshot) {
+        return {
+          workspace: remoteSnapshot.workspace,
+          clienti: normalizeClienti(remoteSnapshot.clienti as Cliente[]),
+          appuntamenti: normalizeAppuntamenti(remoteSnapshot.appuntamenti as Appuntamento[]),
+          servizi: normalizeServizi(remoteSnapshot.servizi as Servizio[]),
+          operatori: normalizeOperatori(remoteSnapshot.operatori as Operatore[]),
+          richiestePrenotazione: normalizeRichiestePrenotazione(
+            remoteSnapshot.richiestePrenotazione as RichiestaPrenotazione[]
+          ),
+          availabilitySettings: normalizeAvailabilitySettings(remoteSnapshot.availabilitySettings),
+        };
       }
 
-      if (!resolvedEmail) return null;
+      if (
+        isAuthenticated &&
+        normalizedCode === normalizeSalonCode(salonWorkspace.salonCode) &&
+        salonWorkspace.salonName.trim()
+      ) {
+        return {
+          workspace: salonWorkspace,
+          clienti,
+          appuntamenti,
+          servizi,
+          operatori,
+          richiestePrenotazione,
+          availabilitySettings,
+        };
+      }
 
-      const [
-        workspaceRaw,
-        clientiRaw,
-        appuntamentiRaw,
-        serviziRaw,
-        operatoriRaw,
-        richiesteRaw,
-        availabilityRaw,
-      ] = await Promise.all([
-        AsyncStorage.getItem(buildScopedStorageKey(STORAGE_KEYS.workspace, resolvedEmail)),
-        AsyncStorage.getItem(buildScopedStorageKey(STORAGE_KEYS.clienti, resolvedEmail)),
-        AsyncStorage.getItem(buildScopedStorageKey(STORAGE_KEYS.appuntamenti, resolvedEmail)),
-        AsyncStorage.getItem(buildScopedStorageKey(STORAGE_KEYS.servizi, resolvedEmail)),
-        AsyncStorage.getItem(buildScopedStorageKey(STORAGE_KEYS.operatori, resolvedEmail)),
-        AsyncStorage.getItem(
-          buildScopedStorageKey(STORAGE_KEYS.richieste_prenotazione, resolvedEmail)
-        ),
-        AsyncStorage.getItem(
-          buildScopedStorageKey(STORAGE_KEYS.availability_settings, resolvedEmail)
-        ),
-      ]);
-
-      return {
-        workspace: workspaceRaw
-          ? normalizeWorkspace(JSON.parse(workspaceRaw), resolvedEmail)
-          : createDefaultWorkspace(resolvedEmail),
-        clienti: clientiRaw ? normalizeClienti(JSON.parse(clientiRaw)) : normalizeClienti([]),
-        appuntamenti: appuntamentiRaw
-          ? normalizeAppuntamenti(JSON.parse(appuntamentiRaw))
-          : normalizeAppuntamenti([]),
-        servizi: serviziRaw ? normalizeServizi(JSON.parse(serviziRaw)) : normalizeServizi([]),
-        operatori: operatoriRaw ? normalizeOperatori(JSON.parse(operatoriRaw)) : normalizeOperatori([]),
-        richiestePrenotazione: richiesteRaw
-          ? normalizeRichiestePrenotazione(JSON.parse(richiesteRaw))
-          : [],
-        availabilitySettings: availabilityRaw
-          ? normalizeAvailabilitySettings(JSON.parse(availabilityRaw))
-          : normalizeAvailabilitySettings(),
-      };
+      return null;
     } catch (error) {
       console.log('Errore caricamento salone pubblico:', error);
       return null;
@@ -1142,15 +1131,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
             ...resolved.clienti,
           ];
 
-      const targetEmail = resolved.workspace.ownerEmail;
+      const workspaceId = await publishClientPortalSnapshot({
+        workspace: resolved.workspace,
+        clienti: nextCustomers as unknown as Array<Record<string, unknown>>,
+        appuntamenti: resolved.appuntamenti as unknown as Array<Record<string, unknown>>,
+        servizi: resolved.servizi as unknown as Array<Record<string, unknown>>,
+        operatori: resolved.operatori as unknown as Array<Record<string, unknown>>,
+        richiestePrenotazione:
+          resolved.richiestePrenotazione as unknown as Array<Record<string, unknown>>,
+        availabilitySettings: resolved.availabilitySettings,
+      });
 
-      if (normalizedCode === salonWorkspace.salonCode && targetEmail === salonAccountEmail) {
+      if (normalizedCode === salonWorkspace.salonCode && resolved.workspace.ownerEmail === salonAccountEmail) {
         setClienti(nextCustomers);
-      } else {
-        await AsyncStorage.setItem(
-          buildScopedStorageKey(STORAGE_KEYS.clienti, targetEmail),
-          JSON.stringify(nextCustomers)
-        );
+        if (workspaceId && workspaceId !== salonWorkspace.id) {
+          setSalonWorkspace((current) => ({ ...current, id: workspaceId }));
+        }
       }
 
       return true;
@@ -1171,15 +1167,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!resolved) return false;
 
       const nextRequests = [request, ...resolved.richiestePrenotazione];
-      const targetEmail = resolved.workspace.ownerEmail;
 
-      if (normalizedCode === salonWorkspace.salonCode && targetEmail === salonAccountEmail) {
+      const workspaceId = await publishClientPortalSnapshot({
+        workspace: resolved.workspace,
+        clienti: resolved.clienti as unknown as Array<Record<string, unknown>>,
+        appuntamenti: resolved.appuntamenti as unknown as Array<Record<string, unknown>>,
+        servizi: resolved.servizi as unknown as Array<Record<string, unknown>>,
+        operatori: resolved.operatori as unknown as Array<Record<string, unknown>>,
+        richiestePrenotazione:
+          normalizeRichiestePrenotazione(nextRequests) as unknown as Array<Record<string, unknown>>,
+        availabilitySettings: resolved.availabilitySettings,
+      });
+
+      if (normalizedCode === salonWorkspace.salonCode && resolved.workspace.ownerEmail === salonAccountEmail) {
         setRichiestePrenotazione(normalizeRichiestePrenotazione(nextRequests));
-      } else {
-        await AsyncStorage.setItem(
-          buildScopedStorageKey(STORAGE_KEYS.richieste_prenotazione, targetEmail),
-          JSON.stringify(normalizeRichiestePrenotazione(nextRequests))
-        );
+        if (workspaceId && workspaceId !== salonWorkspace.id) {
+          setSalonWorkspace((current) => ({ ...current, id: workspaceId }));
+        }
       }
 
       await queueWorkspacePushNotification({
@@ -1223,15 +1227,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
           : item
       );
 
-      const targetEmail = resolved.workspace.ownerEmail;
+      const workspaceId = await publishClientPortalSnapshot({
+        workspace: resolved.workspace,
+        clienti: resolved.clienti as unknown as Array<Record<string, unknown>>,
+        appuntamenti: resolved.appuntamenti as unknown as Array<Record<string, unknown>>,
+        servizi: resolved.servizi as unknown as Array<Record<string, unknown>>,
+        operatori: resolved.operatori as unknown as Array<Record<string, unknown>>,
+        richiestePrenotazione:
+          normalizeRichiestePrenotazione(nextRequests) as unknown as Array<Record<string, unknown>>,
+        availabilitySettings: resolved.availabilitySettings,
+      });
 
-      if (normalizedCode === salonWorkspace.salonCode && targetEmail === salonAccountEmail) {
+      if (normalizedCode === salonWorkspace.salonCode && resolved.workspace.ownerEmail === salonAccountEmail) {
         setRichiestePrenotazione(normalizeRichiestePrenotazione(nextRequests));
-      } else {
-        await AsyncStorage.setItem(
-          buildScopedStorageKey(STORAGE_KEYS.richieste_prenotazione, targetEmail),
-          JSON.stringify(normalizeRichiestePrenotazione(nextRequests))
-        );
+        if (workspaceId && workspaceId !== salonWorkspace.id) {
+          setSalonWorkspace((current) => ({ ...current, id: workspaceId }));
+        }
       }
     } catch (error) {
       console.log('Errore aggiornamento richieste cliente lette:', error);
@@ -1312,27 +1323,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
         })
       );
 
-      const targetEmail = resolved.workspace.ownerEmail;
+      const workspaceId = await publishClientPortalSnapshot({
+        workspace: resolved.workspace,
+        clienti: nextCustomers as unknown as Array<Record<string, unknown>>,
+        appuntamenti: nextAppointments as unknown as Array<Record<string, unknown>>,
+        servizi: resolved.servizi as unknown as Array<Record<string, unknown>>,
+        operatori: resolved.operatori as unknown as Array<Record<string, unknown>>,
+        richiestePrenotazione: nextRequests as unknown as Array<Record<string, unknown>>,
+        availabilitySettings: resolved.availabilitySettings,
+      });
 
-      if (normalizedCode === salonWorkspace.salonCode && targetEmail === salonAccountEmail) {
+      if (normalizedCode === salonWorkspace.salonCode && resolved.workspace.ownerEmail === salonAccountEmail) {
         setRichiestePrenotazione(nextRequests);
         setAppuntamenti(nextAppointments);
         setClienti(nextCustomers);
-      } else {
-        await Promise.all([
-          AsyncStorage.setItem(
-            buildScopedStorageKey(STORAGE_KEYS.richieste_prenotazione, targetEmail),
-            JSON.stringify(nextRequests)
-          ),
-          AsyncStorage.setItem(
-            buildScopedStorageKey(STORAGE_KEYS.appuntamenti, targetEmail),
-            JSON.stringify(nextAppointments)
-          ),
-          AsyncStorage.setItem(
-            buildScopedStorageKey(STORAGE_KEYS.clienti, targetEmail),
-            JSON.stringify(nextCustomers)
-          ),
-        ]);
+        if (workspaceId && workspaceId !== salonWorkspace.id) {
+          setSalonWorkspace((current) => ({ ...current, id: workspaceId }));
+        }
       }
 
       await queueWorkspacePushNotification({
@@ -1355,47 +1362,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       console.log('Errore annullamento prenotazione cliente:', error);
       return { ok: false, error: 'Non sono riuscito ad annullare la prenotazione.' };
     }
-  };
-
-  const resetDatiDemo = async () => {
-    setClienti(normalizeClienti(clientiIniziali));
-    setAppuntamenti(normalizeAppuntamenti(appuntamentiIniziali));
-    setMovimenti(normalizeMovimenti(movimentiIniziali));
-    setServizi(normalizeServizi(serviziIniziali));
-    setOperatori(normalizeOperatori([]));
-    setCarteCollegate([]);
-    setEventi([]);
-    setRichiestePrenotazione([]);
-    setAvailabilitySettings(normalizeAvailabilitySettings());
-    setMessaggioEventoTemplate(
-      'Ciao! Ti aspetto a {evento} il {data} alle {ora}. Scrivimi per conferma.'
-    );
-
-    await AsyncStorage.removeItem(buildScopedStorageKey(STORAGE_KEYS.clienti, salonAccountEmail));
-    await AsyncStorage.removeItem(
-      buildScopedStorageKey(STORAGE_KEYS.workspace, salonAccountEmail)
-    );
-    await AsyncStorage.removeItem(
-      buildScopedStorageKey(STORAGE_KEYS.appuntamenti, salonAccountEmail)
-    );
-    await AsyncStorage.removeItem(
-      buildScopedStorageKey(STORAGE_KEYS.movimenti, salonAccountEmail)
-    );
-    await AsyncStorage.removeItem(buildScopedStorageKey(STORAGE_KEYS.servizi, salonAccountEmail));
-    await AsyncStorage.removeItem(
-      buildScopedStorageKey(STORAGE_KEYS.operatori, salonAccountEmail)
-    );
-    await AsyncStorage.removeItem(buildScopedStorageKey(STORAGE_KEYS.carte, salonAccountEmail));
-    await AsyncStorage.removeItem(buildScopedStorageKey(STORAGE_KEYS.eventi, salonAccountEmail));
-    await AsyncStorage.removeItem(
-      buildScopedStorageKey(STORAGE_KEYS.eventi_template, salonAccountEmail)
-    );
-    await AsyncStorage.removeItem(
-      buildScopedStorageKey(STORAGE_KEYS.richieste_prenotazione, salonAccountEmail)
-    );
-    await AsyncStorage.removeItem(
-      buildScopedStorageKey(STORAGE_KEYS.availability_settings, salonAccountEmail)
-    );
   };
 
   const workspaceAccessAllowed = isWorkspaceAccessible(salonWorkspace);
@@ -1443,7 +1409,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         addBookingRequestForSalon,
         markClientRequestsViewedForSalon,
         cancelClientAppointmentForSalon,
-        resetDatiDemo,
         isLoaded,
       }}
     >
