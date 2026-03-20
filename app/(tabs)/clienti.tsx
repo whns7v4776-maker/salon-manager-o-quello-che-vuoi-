@@ -1,16 +1,17 @@
 import { useFocusEffect } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
-  FlatList,
-  Keyboard,
-  Linking,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Alert,
+    FlatList,
+    Keyboard,
+    Linking,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
+import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { ModuleHeroHeader } from '../../components/module-hero-header';
 import { ClearableTextInput } from '../../components/ui/clearable-text-input';
 import { WheelDatePickerModal } from '../../components/ui/wheel-date-picker-modal';
@@ -71,6 +72,7 @@ export default function ClientiScreen() {
     setClienti: setLocalClienti,
   } = useAppContext();
   const listRef = useRef<FlatList<ClienteItem> | null>(null);
+  const swipeableRefs = useRef<Record<string, Swipeable | null>>({});
   const nameInputRef = useRef<TextInput | null>(null);
   const phoneInputRef = useRef<TextInput | null>(null);
   const emailInputRef = useRef<TextInput | null>(null);
@@ -159,6 +161,8 @@ export default function ClientiScreen() {
         listRef.current?.scrollToOffset({ offset: 0, animated: false });
       });
 
+      Object.values(swipeableRefs.current).forEach((ref) => ref?.close());
+
       setLocalClienti((current) =>
         current.map((item) =>
           item.fonte === 'frontend' && item.viewedBySalon === false
@@ -186,6 +190,15 @@ export default function ClientiScreen() {
     setInstagram(cliente.instagram ?? '');
     setBirthday(normalizeBirthdayValue(cliente.birthday));
   };
+
+  const apriModificaCliente = useCallback((cliente: ClienteItem) => {
+    swipeableRefs.current[cliente.id]?.close();
+    preparaModificaCliente(cliente);
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToOffset({ offset: 0, animated: true });
+      nameInputRef.current?.focus();
+    });
+  }, []);
 
   const salvaCliente = async () => {
     if (!nome.trim() || !telefono.trim()) {
@@ -279,6 +292,7 @@ export default function ClientiScreen() {
           style: nextIsActive ? 'default' : 'destructive',
           onPress: async () => {
             try {
+              swipeableRefs.current[cliente.id]?.close();
               setLocalClienti((current) =>
                 current.map((item) =>
                   item.id === cliente.id ? { ...item, inibito: !nextIsActive } : item
@@ -308,22 +322,76 @@ export default function ClientiScreen() {
   }, [clienti, ricerca]);
 
   const renderClienteCard = (item: ClienteItem) => {
-    const isSelected = clienteInModifica?.id === item.id;
     const isInibito = (item.is_active ?? true) === false;
     const instagramHandle = item.instagram?.replace(/^@+/, '') ?? '';
     const canOpenInstagram = instagramHandle.trim() !== '';
     const compactContactChips = responsive.width < 390;
     const ultraCompactContactChips = responsive.width < 360;
-    const compactSideActions = responsive.width < 390;
-    const ultraCompactSideActions = responsive.width < 360;
+    const birthdayLabel = formatBirthdayLabel(item.birthday);
+
+    const renderLeftActions = () => (
+      <View style={styles.swipeActionsRowLeft}>
+        <TouchableOpacity
+          style={[styles.swipeActionButton, styles.swipeActionEdit]}
+          onPress={() => apriModificaCliente(item)}
+          activeOpacity={0.92}
+        >
+          <Text style={styles.swipeActionLabel}>Modifica</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.swipeActionButton,
+            isInibito ? styles.swipeActionUnlock : styles.swipeActionBlock,
+          ]}
+          onPress={() => toggleInibizioneCliente(item)}
+          activeOpacity={0.92}
+        >
+          <Text
+            style={[
+              styles.swipeActionLabel,
+              isInibito ? styles.swipeActionLabelUnlock : styles.swipeActionLabelBlock,
+            ]}
+          >
+            {isInibito ? 'Sblocca' : 'Inibisci'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+
+    const renderRightActions = () => (
+      <TouchableOpacity
+        style={[styles.swipeActionButton, styles.swipeActionDelete]}
+        onPress={() => {
+          swipeableRefs.current[item.id]?.close();
+          eliminaCliente(item.id, item.full_name);
+        }}
+        activeOpacity={0.92}
+      >
+        <Text style={[styles.swipeActionLabel, styles.swipeActionLabelDelete]}>Elimina</Text>
+      </TouchableOpacity>
+    );
 
     return (
-      <TouchableOpacity
-        activeOpacity={0.92}
-        onPress={() => preparaModificaCliente(item)}
-        style={[styles.clienteCard, isSelected && styles.clienteCardSelected]}
+      <Swipeable
+        ref={(ref) => {
+          swipeableRefs.current[item.id] = ref;
+        }}
+        renderLeftActions={renderLeftActions}
+        renderRightActions={renderRightActions}
+        overshootLeft={false}
+        overshootRight={false}
+        leftThreshold={24}
+        rightThreshold={24}
       >
-        <View style={styles.clienteMain}>
+        <TouchableOpacity
+          activeOpacity={0.92}
+          onPress={() => apriModificaCliente(item)}
+          style={[
+            styles.clienteCard,
+            clienteInModifica?.id === item.id && styles.clienteCardSelected,
+          ]}
+        >
+          <View style={styles.clienteMain}>
           <View style={styles.clienteIdentityRow}>
             <View style={styles.clienteInitialBadge}>
               <Text style={styles.clienteInitialText}>
@@ -345,7 +413,7 @@ export default function ClientiScreen() {
 
               <Text style={styles.clienteTelefono} numberOfLines={1}>{item.phone}</Text>
 
-              {(item.email || canOpenInstagram) ? (
+              {(item.email || canOpenInstagram || birthdayLabel) ? (
                 <View style={styles.clienteMetaRow}>
                   {item.email ? (
                     <Text style={styles.clienteEmailCompact} numberOfLines={1}>
@@ -355,6 +423,11 @@ export default function ClientiScreen() {
                   {canOpenInstagram ? (
                     <Text style={styles.clienteInstagramCompact} numberOfLines={1}>
                       @{instagramHandle}
+                    </Text>
+                  ) : null}
+                  {birthdayLabel ? (
+                    <Text style={styles.clienteBirthdayCompact} numberOfLines={1}>
+                      {birthdayLabel}
                     </Text>
                   ) : null}
                 </View>
@@ -394,57 +467,15 @@ export default function ClientiScreen() {
             </View>
           </View>
 
-          <Text style={styles.clienteTapHint}>Tocca la card per modificare</Text>
-        </View>
-
-        <View style={[styles.cardActionsColumn, compactSideActions && styles.cardActionsColumnCompact]}>
-          <TouchableOpacity
-            onPress={() => toggleInibizioneCliente(item)}
-            activeOpacity={0.9}
-            style={[
-              styles.sideActionButton,
-              compactSideActions && styles.sideActionButtonCompact,
-              isInibito ? styles.sideActionButtonSuccess : styles.sideActionButtonWarning,
-            ]}
-          >
-            <Text
-              style={[
-                styles.sideActionButtonText,
-                compactSideActions && styles.sideActionButtonTextCompact,
-                isInibito ? styles.sideActionButtonTextSuccess : styles.sideActionButtonTextWarning,
-              ]}
-            >
-              {isInibito
-                ? ultraCompactSideActions
-                  ? 'On'
-                  : 'Sblocca'
-                : ultraCompactSideActions
-                  ? 'Off'
-                  : 'Inibisci'}
+          <View style={styles.cardTrailingMeta}>
+            <Text style={styles.cardTrailingMetaText}>
+              {isInibito ? 'Accesso online bloccato' : 'Attivo online'}
             </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            onPress={() => eliminaCliente(item.id, item.full_name)}
-            activeOpacity={0.9}
-            style={[
-              styles.sideActionButton,
-              compactSideActions && styles.sideActionButtonCompact,
-              styles.sideActionButtonDanger,
-            ]}
-          >
-            <Text
-              style={[
-                styles.sideActionButtonText,
-                compactSideActions && styles.sideActionButtonTextCompact,
-                styles.sideActionButtonTextDanger,
-              ]}
-            >
-              {ultraCompactSideActions ? 'Del' : 'Elimina'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </TouchableOpacity>
+            <Text style={styles.cardTrailingMetaHint}>Swipe per azioni rapide</Text>
+          </View>
+          </View>
+        </TouchableOpacity>
+      </Swipeable>
     );
   };
 
@@ -463,7 +494,10 @@ export default function ClientiScreen() {
         ]}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
-        onScrollBeginDrag={Keyboard.dismiss}
+        onScrollBeginDrag={() => {
+          Keyboard.dismiss();
+          Object.values(swipeableRefs.current).forEach((ref) => ref?.close());
+        }}
         ListHeaderComponent={
           <View style={[styles.pageShell, { maxWidth: responsive.contentMaxWidth }]}>
             <View style={styles.heroCard}>
@@ -487,7 +521,7 @@ export default function ClientiScreen() {
                       adjustsFontSizeToFit
                       minimumFontScale={0.86}
                     >
-                      {clienteInModifica ? 'Modifica cliente' : 'Aggiungi Nuovo Cliente'}
+                      {clienteInModifica ? 'Modifica cliente' : 'Nuovo cliente'}
                     </Text>
                   </View>
                   <Text style={styles.searchSubtitle}>
@@ -495,7 +529,7 @@ export default function ClientiScreen() {
                       ? 'Caricamento salone...'
                       : clienteInModifica
                       ? 'Stai modificando un cliente esistente.'
-                      : 'Aggiungi un cliente e salvalo direttamente nel database.'}
+                        : 'Aggiungi o aggiorna rapidamente la rubrica del salone.'}
                   </Text>
                 </View>
 
@@ -636,7 +670,7 @@ export default function ClientiScreen() {
             <View style={styles.searchCard}>
               <Text style={styles.searchTitle}>Rubrica clienti</Text>
               <Text style={styles.searchSubtitle}>
-                Qui trovi tutti i clienti collegati al tuo salone.
+                Swipe laterale per modificare, inibire o eliminare senza perdere spazio utile.
               </Text>
 
               <ClearableTextInput
@@ -934,7 +968,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderRadius: 18,
     paddingHorizontal: 12,
-    paddingVertical: 9,
+    paddingVertical: 8,
     marginBottom: 8,
     borderWidth: 1,
     borderColor: '#e2e8f0',
@@ -943,25 +977,24 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
     elevation: 2,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: 7,
   },
   clienteCardSelected: {
     borderColor: '#111827',
     borderWidth: 2,
   },
   clienteMain: {
-    flex: 1,
-    marginRight: 10,
+    width: '100%',
   },
   clienteIdentityRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
   },
   clienteInitialBadge: {
-    width: 36,
-    height: 36,
+    width: 34,
+    height: 34,
     borderRadius: 999,
     backgroundColor: '#111827',
     alignItems: 'center',
@@ -1005,7 +1038,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexWrap: 'wrap',
     gap: 6,
-    marginTop: 1,
+    marginTop: 2,
   },
   clienteEmailCompact: {
     fontSize: 11,
@@ -1019,12 +1052,10 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     textAlign: 'left',
   },
-  clienteTapHint: {
-    fontSize: 10,
-    color: '#94a3b8',
-    fontWeight: '700',
-    marginTop: 4,
-    marginLeft: 45,
+  clienteBirthdayCompact: {
+    fontSize: 11,
+    color: '#0f766e',
+    fontWeight: '800',
     textAlign: 'left',
   },
   quickActionsRow: {
@@ -1042,10 +1073,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8fafc',
     borderRadius: 11,
     paddingHorizontal: 8,
-    paddingVertical: 6,
+    paddingVertical: 5,
     borderWidth: 1,
     borderColor: '#dbe4ec',
-    minWidth: 82,
+    minWidth: 74,
     alignItems: 'center',
   },
   quickActionChipCompact: {
@@ -1077,54 +1108,76 @@ const styles = StyleSheet.create({
   quickActionTextInstagram: {
     color: '#7c3aed',
   },
-  cardActionsColumn: {
-    alignItems: 'stretch',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  cardActionsColumnCompact: {
-    gap: 5,
-  },
-  sideActionButton: {
-    minWidth: 78,
-    borderRadius: 11,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderWidth: 1,
+  cardTrailingMeta: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    paddingTop: 1,
+    borderTopWidth: 1,
+    borderTopColor: '#eef2f7',
   },
-  sideActionButtonCompact: {
-    minWidth: 60,
-    paddingHorizontal: 8,
-    paddingVertical: 7,
-    borderRadius: 10,
-  },
-  sideActionButtonText: {
-    fontWeight: '800',
+  cardTrailingMetaText: {
     fontSize: 11,
+    fontWeight: '800',
+    color: '#334155',
+    flex: 1,
   },
-  sideActionButtonTextCompact: {
+  cardTrailingMetaHint: {
     fontSize: 10,
+    fontWeight: '800',
+    color: '#94a3b8',
   },
-  sideActionButtonWarning: {
+  swipeActionsRowLeft: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    marginBottom: 8,
+    gap: 8,
+  },
+  swipeActionButton: {
+    minWidth: 88,
+    borderRadius: 16,
+    marginBottom: 8,
+    marginRight: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  swipeActionEdit: {
+    backgroundColor: '#dbeafe',
+    borderWidth: 1,
+    borderColor: '#93c5fd',
+  },
+  swipeActionBlock: {
     backgroundColor: '#fff7ed',
+    borderWidth: 1,
     borderColor: '#fdba74',
   },
-  sideActionButtonTextWarning: {
-    color: '#c2410c',
-  },
-  sideActionButtonSuccess: {
+  swipeActionUnlock: {
     backgroundColor: '#dcfce7',
+    borderWidth: 1,
     borderColor: '#86efac',
   },
-  sideActionButtonTextSuccess: {
+  swipeActionDelete: {
+    backgroundColor: '#fee2e2',
+    borderWidth: 1,
+    borderColor: '#fecaca',
+    minWidth: 96,
+    marginBottom: 8,
+  },
+  swipeActionLabel: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#1e3a8a',
+  },
+  swipeActionLabelBlock: {
+    color: '#c2410c',
+  },
+  swipeActionLabelUnlock: {
     color: '#166534',
   },
-  sideActionButtonDanger: {
-    backgroundColor: '#fee2e2',
-    borderColor: '#fecaca',
-  },
-  sideActionButtonTextDanger: {
+  swipeActionLabelDelete: {
     color: '#b91c1c',
   },
   statusBadgeBlocked: {

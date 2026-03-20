@@ -2,21 +2,21 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
 import { AppState } from 'react-native';
 import {
-  AvailabilitySettings,
-  normalizeAvailabilitySettings,
-  OperatorAvailability,
-  OperatorAvailabilityRange,
+    AvailabilitySettings,
+    normalizeAvailabilitySettings,
+    OperatorAvailability,
+    OperatorAvailabilityRange,
 } from '../lib/booking';
 import { fetchClientPortalSnapshot, publishClientPortalSnapshot } from '../lib/client-portal';
 import { AppLanguage, resolveStoredAppLanguage } from '../lib/i18n';
 import {
-  buildSalonCode,
-  createDefaultWorkspace,
-  formatSalonAddress,
-  isWorkspaceAccessible,
-  normalizeSalonCode,
-  normalizeWorkspace,
-  SalonWorkspace,
+    buildSalonCode,
+    createDefaultWorkspace,
+    formatSalonAddress,
+    isWorkspaceAccessible,
+    normalizeSalonCode,
+    normalizeWorkspace,
+    SalonWorkspace,
 } from '../lib/platform';
 import { queueWorkspacePushNotification } from '../lib/push/push-notifications';
 
@@ -37,6 +37,7 @@ const STORAGE_KEYS = {
   richieste_prenotazione: 'salon_manager_richieste_prenotazione',
   availability_settings: 'salon_manager_availability_settings',
   operatori: 'salon_manager_operatori',
+  macchinari: 'salon_manager_macchinari',
   daily_auto_cashout: 'salon_manager_daily_auto_cashout',
 };
 
@@ -264,6 +265,23 @@ const normalizeOperatori = (items: Operatore[]) =>
     availability: normalizeOperatorAvailability(item.availability),
   }));
 
+type Macchinario = {
+  id: string;
+  nome: string;
+  categoria: string;
+  note?: string;
+  attivo?: boolean;
+};
+
+const normalizeMacchinari = (items: Macchinario[]) =>
+  items.map((item) => ({
+    ...item,
+    nome: item.nome.trim(),
+    categoria: item.categoria.trim(),
+    note: item.note?.trim() ?? '',
+    attivo: item.attivo ?? true,
+  }));
+
 type AppContextType = {
   appLanguage: AppLanguage;
   setAppLanguage: React.Dispatch<React.SetStateAction<AppLanguage>>;
@@ -306,6 +324,8 @@ type AppContextType = {
   setServizi: React.Dispatch<React.SetStateAction<Servizio[]>>;
   operatori: Operatore[];
   setOperatori: React.Dispatch<React.SetStateAction<Operatore[]>>;
+  macchinari: Macchinario[];
+  setMacchinari: React.Dispatch<React.SetStateAction<Macchinario[]>>;
   carteCollegate: CartaCollegata[];
   setCarteCollegate: React.Dispatch<React.SetStateAction<CartaCollegata[]>>;
   eventi: Evento[];
@@ -368,6 +388,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [movimenti, setMovimenti] = useState<Movimento[]>(normalizeMovimenti([]));
   const [servizi, setServizi] = useState<Servizio[]>(normalizeServizi([]));
   const [operatori, setOperatori] = useState<Operatore[]>(normalizeOperatori([]));
+  const [macchinari, setMacchinari] = useState<Macchinario[]>(normalizeMacchinari([]));
   const [carteCollegate, setCarteCollegate] = useState<CartaCollegata[]>([]);
   const [eventi, setEventi] = useState<Evento[]>([]);
   const [richiestePrenotazione, setRichiestePrenotazione] = useState<
@@ -395,6 +416,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setMovimenti(normalizeMovimenti([]));
     setServizi(normalizeServizi([]));
     setOperatori(normalizeOperatori([]));
+    setMacchinari(normalizeMacchinari([]));
     setCarteCollegate([]);
     setEventi([]);
     setRichiestePrenotazione([]);
@@ -557,6 +579,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const operatoriSalvati = await AsyncStorage.getItem(
           buildScopedStorageKey(STORAGE_KEYS.operatori, salonAccountEmail)
         );
+        const macchinariSalvati = await AsyncStorage.getItem(
+          buildScopedStorageKey(STORAGE_KEYS.macchinari, salonAccountEmail)
+        );
         const eventiSalvati = await AsyncStorage.getItem(
           buildScopedStorageKey(STORAGE_KEYS.eventi, salonAccountEmail)
         );
@@ -591,6 +616,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           serviziSalvati ? normalizeServizi(JSON.parse(serviziSalvati)) : normalizeServizi([])
         );
         setOperatori(operatoriSalvati ? normalizeOperatori(JSON.parse(operatoriSalvati)) : []);
+        setMacchinari(
+          macchinariSalvati ? normalizeMacchinari(JSON.parse(macchinariSalvati)) : []
+        );
         setCarteCollegate(carteSalvate ? normalizeCarte(JSON.parse(carteSalvate)) : []);
         setEventi(eventiSalvati ? JSON.parse(eventiSalvati) : []);
         setRichiestePrenotazione(
@@ -614,6 +642,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setMovimenti(normalizeMovimenti([]));
         setServizi(normalizeServizi([]));
         setOperatori(normalizeOperatori([]));
+        setMacchinari(normalizeMacchinari([]));
         setCarteCollegate([]);
         setEventi([]);
         setRichiestePrenotazione([]);
@@ -749,6 +778,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       JSON.stringify(operatori)
     );
   }, [operatori, isLoaded, salonAccountEmail]);
+
+  useEffect(() => {
+    if (!isLoaded || !salonAccountEmail) return;
+    AsyncStorage.setItem(
+      buildScopedStorageKey(STORAGE_KEYS.macchinari, salonAccountEmail),
+      JSON.stringify(macchinari)
+    );
+  }, [isLoaded, macchinari, salonAccountEmail]);
 
   useEffect(() => {
     if (!isLoaded || !salonAccountEmail) return;
@@ -1394,6 +1431,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setServizi,
         operatori,
         setOperatori,
+        macchinari,
+        setMacchinari,
         carteCollegate,
         setCarteCollegate,
         eventi,

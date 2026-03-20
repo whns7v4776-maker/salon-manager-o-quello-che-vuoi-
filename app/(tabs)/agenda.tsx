@@ -3,18 +3,18 @@ import * as Haptics from 'expo-haptics';
 import { useFocusEffect } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
-  Animated,
-  AppState,
-  FlatList,
-  Keyboard,
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Alert,
+    Animated,
+    AppState,
+    FlatList,
+    Keyboard,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { ModuleHeroHeader } from '../../components/module-hero-header';
@@ -24,17 +24,18 @@ import { NativeTimePickerModal } from '../../components/ui/native-time-picker-mo
 import { NumberPickerModal } from '../../components/ui/number-picker-modal';
 import { useAppContext } from '../../src/context/AppContext';
 import {
-  buildDisplayTimeSlots,
-  doesServiceFitWithinDaySchedule,
-  doesServiceOverlapLunchBreak,
-  doesServiceUseOperators,
-  findConflictingAppointment as findConflictingAppointmentShared,
-  getDateAvailabilityInfo,
-  getEligibleOperatorsForService,
-  getSlotIntervalForDate,
-  isSlotBlockedByOverride,
-  isTimeBlockedByLunchBreak,
-  isTimeWithinDaySchedule,
+    buildDisplayTimeSlots,
+    buildTimeSlots,
+    doesServiceFitWithinDaySchedule,
+    doesServiceOverlapLunchBreak,
+    doesServiceUseOperators,
+    findConflictingAppointment as findConflictingAppointmentShared,
+    getDateAvailabilityInfo,
+    getEligibleOperatorsForService,
+    getSlotIntervalForDate,
+    isSlotBlockedByOverride,
+    isTimeBlockedByLunchBreak,
+    isTimeWithinDaySchedule,
 } from '../../src/lib/booking';
 import { AppLanguage, tApp } from '../../src/lib/i18n';
 import { useResponsiveLayout } from '../../src/lib/responsive';
@@ -45,6 +46,9 @@ const MESI_IT = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 
 const DAY_CARD_WIDTH = 68;
 const DAY_CARD_GAP = 6;
 const DAY_CARD_FULL_WIDTH = DAY_CARD_WIDTH + DAY_CARD_GAP;
+const WEEK_PLANNER_ROW_HEIGHT = 54;
+const WEEK_PLANNER_DAY_WIDTH = 122;
+const WEEK_PLANNER_ROW_GAP = 8;
 
 const SLOT_INTERVAL_OPTIONS = Array.from({ length: 20 }, (_, index) => (index + 1) * 15);
 
@@ -91,6 +95,13 @@ type AgendaDaySection = {
 };
 
 type AgendaView = 'today' | 'upcoming' | 'recent' | 'week';
+
+type QuickSlotDraft = {
+  date: string;
+  time: string;
+};
+
+type WeekPlannerCellState = 'available' | 'occupied' | 'blocked' | 'outside';
 
 const getTodayDateString = () => {
   const today = new Date();
@@ -343,8 +354,11 @@ export default function AgendaScreen() {
     appuntamenti,
     setAppuntamenti,
     clienti,
+    setClienti,
     servizi,
     operatori,
+    macchinari,
+    setMacchinari,
     movimenti,
     setMovimenti,
     richiestePrenotazione,
@@ -380,6 +394,19 @@ export default function AgendaScreen() {
   const [showCustomizeHoursExpanded, setShowCustomizeHoursExpanded] = useState(false);
   const [agendaView, setAgendaView] = useState<AgendaView>('today');
   const [slotPreviewTime, setSlotPreviewTime] = useState<string | null>(null);
+  const [showOperatorListExpanded, setShowOperatorListExpanded] = useState(false);
+  const [showMachineryListExpanded, setShowMachineryListExpanded] = useState(false);
+  const [machineryNameInput, setMachineryNameInput] = useState('');
+  const [machineryCategoryInput, setMachineryCategoryInput] = useState('');
+  const [machineryNotesInput, setMachineryNotesInput] = useState('');
+  const [quickSlotDraft, setQuickSlotDraft] = useState<QuickSlotDraft | null>(null);
+  const [quickBookingServiceId, setQuickBookingServiceId] = useState('');
+  const [quickBookingCustomerId, setQuickBookingCustomerId] = useState('');
+  const [quickBookingOperatorId, setQuickBookingOperatorId] = useState('');
+  const [showQuickCustomerComposer, setShowQuickCustomerComposer] = useState(false);
+  const [quickCustomerNameInput, setQuickCustomerNameInput] = useState('');
+  const [quickCustomerPhoneInput, setQuickCustomerPhoneInput] = useState('');
+  const [quickCustomerEmailInput, setQuickCustomerEmailInput] = useState('');
   const weekdayLabels = [
     tApp(appLanguage, 'agenda_weekday_sunday'),
     tApp(appLanguage, 'agenda_weekday_monday'),
@@ -430,6 +457,10 @@ export default function AgendaScreen() {
         setVacationPickerTarget(null);
         setShowSlotIntervalPicker(false);
         setShowCustomizeHoursExpanded(false);
+        setShowOperatorListExpanded(false);
+        setShowMachineryListExpanded(false);
+        setQuickSlotDraft(null);
+        setShowQuickCustomerComposer(false);
         setAgendaView('today');
         setSlotPreviewTime(null);
         listRef.current?.scrollToOffset({ offset: 0, animated: false });
@@ -476,10 +507,30 @@ export default function AgendaScreen() {
 
     return minutesToTime(timeToMinutes(item.ora) + durataMinuti);
   };
-
+  
   const getServiceDuration = useCallback(
     (serviceName: string) => getTipoAppuntamento(serviceName).durataMinuti ?? 60,
     [getTipoAppuntamento]
+  );
+
+  const weekStart = useMemo(() => getStartOfWeekIso(data), [data]);
+  const weekDates = useMemo(() => buildWeekDates(weekStart, appLanguage), [appLanguage, weekStart]);
+  const weekBaseSlotInterval = Math.max(15, availabilitySettings.slotIntervalMinutes || 30);
+  const weekOpenDays = useMemo(
+    () => availabilitySettings.weeklySchedule.filter((item) => !item.isClosed),
+    [availabilitySettings.weeklySchedule]
+  );
+  const weekStartMinutes = useMemo(() => {
+    if (weekOpenDays.length === 0) return timeToMinutes('09:00');
+    return Math.min(...weekOpenDays.map((item) => timeToMinutes(item.startTime)));
+  }, [weekOpenDays]);
+  const weekEndMinutes = useMemo(() => {
+    if (weekOpenDays.length === 0) return timeToMinutes('19:00');
+    return Math.max(...weekOpenDays.map((item) => timeToMinutes(item.endTime)));
+  }, [weekOpenDays]);
+  const weekTimeSlots = useMemo(
+    () => buildTimeSlots(minutesToTime(weekStartMinutes), minutesToTime(weekEndMinutes - weekBaseSlotInterval), weekBaseSlotInterval),
+    [weekBaseSlotInterval, weekEndMinutes, weekStartMinutes]
   );
 
   const operatoriCompatibili = useMemo(
@@ -679,6 +730,32 @@ export default function AgendaScreen() {
     }, {});
   }, [appuntamenti, todayDate]);
 
+  const getWeekAppointmentStartingAt = useCallback(
+    (dateValue: string, slotTime: string) =>
+      (appointmentsByDate[dateValue] ?? [])
+        .slice()
+        .sort((first, second) => first.ora.localeCompare(second.ora))
+        .find((item) => item.ora === slotTime) ?? null,
+    [appointmentsByDate]
+  );
+
+  const getWeekAppointmentBlockHeight = useCallback(
+    (item: AppuntamentoItem) => {
+      const durationMinutes =
+        typeof item.durataMinuti === 'number' ? item.durataMinuti : getServiceDuration(item.servizio);
+      const interval = Math.max(15, getSlotIntervalForDate(availabilitySettings, item.data ?? data));
+      const span = Math.max(1, Math.ceil(durationMinutes / interval));
+
+      return WEEK_PLANNER_ROW_HEIGHT * span + WEEK_PLANNER_ROW_GAP * Math.max(0, span - 1);
+    },
+    [availabilitySettings, data, getServiceDuration]
+  );
+
+  const weekRangeLabel =
+    weekDates.length === 7
+      ? `${weekDates[0]?.weekdayShort} ${weekDates[0]?.dayNumber} ${weekDates[0]?.monthShort} - ${weekDates[6]?.weekdayShort} ${weekDates[6]?.dayNumber} ${weekDates[6]?.monthShort}`
+      : '';
+
   const buildAgendaSections = useCallback(
     (items: AppuntamentoItem[], order: 'asc' | 'desc' = 'asc') => {
       const dateSet = new Set<string>();
@@ -727,6 +804,38 @@ export default function AgendaScreen() {
     [appuntamentiPassatiFiltrati]
   );
 
+  const weekAppointmentsCount = useMemo(
+    () => weekDates.reduce((total, day) => total + (appointmentsByDate[day.value] ?? []).length, 0),
+    [appointmentsByDate, weekDates]
+  );
+
+  const weekAvailableSlotsCount = useMemo(
+    () =>
+      weekDates.reduce((total, day) => {
+        const availability = getDateAvailabilityInfo(availabilitySettings, day.value);
+        if (availability.closed) return total;
+
+        const availableSlotsForDay = weekTimeSlots.filter((slotTime) => {
+          if (!isTimeWithinDaySchedule(availabilitySettings, day.value, slotTime)) return false;
+          if (isTimeBlockedByLunchBreak(availabilitySettings, slotTime)) return false;
+          if (isSlotBlockedByOverride(availabilitySettings, day.value, slotTime)) return false;
+
+          return !(appointmentsByDate[day.value] ?? []).some((item) =>
+            doesAppointmentOccupySlot(item, slotTime)
+          );
+        }).length;
+
+        return total + availableSlotsForDay;
+      }, 0),
+    [
+      appointmentsByDate,
+      availabilitySettings,
+      doesAppointmentOccupySlot,
+      weekDates,
+      weekTimeSlots,
+    ]
+  );
+
   const agendaViewCards = useMemo(
     () => [
       {
@@ -759,6 +868,16 @@ export default function AgendaScreen() {
           ? `${formatDateCompact(ultimoAppuntamentoArchiviato.data ?? todayDate)} · ${ultimoAppuntamentoArchiviato.cliente}`
           : 'Ancora nessuno storico',
       },
+      {
+        key: 'week' as const,
+        eyebrow: 'Planner',
+        title: 'Settimana',
+        count: weekAppointmentsCount,
+        note:
+          weekDates.length === 7
+            ? `${weekDates[0]?.dayNumber} ${weekDates[0]?.monthShort} - ${weekDates[6]?.dayNumber} ${weekDates[6]?.monthShort} · ${weekAvailableSlotsCount} slot liberi`
+            : 'Vista settimanale',
+      },
     ],
     [
       appuntamentiOggiFiltrati.length,
@@ -769,12 +888,16 @@ export default function AgendaScreen() {
       appuntamentiPassatiFiltrati.length,
       ultimoAppuntamentoArchiviato,
       todayDate,
+      weekAppointmentsCount,
+      weekAvailableSlotsCount,
+      weekDates,
     ]
   );
 
   const selectedAgendaSections = useMemo(() => {
     if (agendaView === 'today') return sezioniAgendaOggi;
     if (agendaView === 'upcoming') return sezioniAgendaProssime;
+    if (agendaView === 'week') return [];
     return sezioniAgendaRecenti;
   }, [agendaView, sezioniAgendaOggi, sezioniAgendaProssime, sezioniAgendaRecenti]);
 
@@ -922,6 +1045,358 @@ export default function AgendaScreen() {
     displayTimeSlots.filter((slotTime) =>
       isSlotBlockedByOverride(availabilitySettings, data, slotTime)
     )
+  );
+
+  const getWeekCellState = useCallback(
+    (dateValue: string, slotTime: string): WeekPlannerCellState => {
+      const availability = getDateAvailabilityInfo(availabilitySettings, dateValue);
+      if (availability.closed) return 'outside';
+      if (!isTimeWithinDaySchedule(availabilitySettings, dateValue, slotTime)) return 'outside';
+      if (isTimeBlockedByLunchBreak(availabilitySettings, slotTime)) return 'blocked';
+      if (isSlotBlockedByOverride(availabilitySettings, dateValue, slotTime)) return 'blocked';
+      if (getSlotBookedCount(dateValue, slotTime) > 0) return 'occupied';
+      return 'available';
+    },
+    [availabilitySettings, getSlotBookedCount]
+  );
+
+  const canScheduleServiceAtSlot = useCallback(
+    ({
+      dateValue,
+      startTime,
+      serviceName,
+      selectedOperatorId,
+    }: {
+      dateValue: string;
+      startTime: string;
+      serviceName: string;
+      selectedOperatorId?: string | null;
+    }) => {
+      if (!serviceName.trim()) return false;
+      const availability = getDateAvailabilityInfo(availabilitySettings, dateValue);
+      if (availability.closed) return false;
+      if (!isTimeWithinDaySchedule(availabilitySettings, dateValue, startTime)) return false;
+      if (
+        !doesServiceFitWithinDaySchedule({
+          settings: availabilitySettings,
+          dateValue,
+          startTime,
+          durationMinutes: getServiceDuration(serviceName),
+        })
+      ) {
+        return false;
+      }
+      if (
+        doesServiceOverlapLunchBreak({
+          settings: availabilitySettings,
+          startTime,
+          durationMinutes: getServiceDuration(serviceName),
+        })
+      ) {
+        return false;
+      }
+      if (isSlotBlockedByOverride(availabilitySettings, dateValue, startTime)) return false;
+
+      const now = new Date();
+      const todayIso = getTodayDateString();
+      if (dateValue === todayIso && timeToMinutes(startTime) < now.getHours() * 60 + now.getMinutes()) {
+        return false;
+      }
+
+      return (
+        getSlotAvailableCount({
+          dateValue,
+          startTime,
+          serviceName,
+          selectedOperatorId: selectedOperatorId ?? null,
+        }) > 0
+      );
+    },
+    [availabilitySettings, getServiceDuration, getSlotAvailableCount]
+  );
+
+  const selectedQuickService = useMemo(
+    () => servizi.find((item) => item.id === quickBookingServiceId) ?? null,
+    [quickBookingServiceId, servizi]
+  );
+
+  const quickBookingCustomerOptions = useMemo(() => clienti.slice(0, 40), [clienti]);
+
+  const selectedQuickCustomer = useMemo(
+    () => clienti.find((item) => item.id === quickBookingCustomerId) ?? null,
+    [clienti, quickBookingCustomerId]
+  );
+
+  const quickBookingCompatibleOperators = useMemo(() => {
+    if (!quickSlotDraft || !selectedQuickService) return [];
+
+    return getEligibleOperatorsForService({
+      serviceName: selectedQuickService.nome,
+      services: servizi,
+      operators: operatori,
+      appointmentDate: quickSlotDraft.date,
+      settings: availabilitySettings,
+    });
+  }, [availabilitySettings, operatori, quickSlotDraft, selectedQuickService, servizi]);
+
+  const quickBookingUsesOperators =
+    !!selectedQuickService &&
+    operatori.length > 0 &&
+    doesServiceUseOperators(selectedQuickService.nome, servizi) &&
+    quickBookingCompatibleOperators.length > 0;
+
+  const quickBookingOperatorSelectionRequired =
+    quickBookingUsesOperators && quickBookingCompatibleOperators.length > 1;
+
+  const openQuickSlotModal = useCallback(
+    (dateValue: string, slotTime: string) => {
+      if (getWeekCellState(dateValue, slotTime) !== 'available') return;
+
+      setQuickSlotDraft({ date: dateValue, time: slotTime });
+      setQuickBookingServiceId('');
+      setQuickBookingCustomerId('');
+      setQuickBookingOperatorId('');
+      setShowQuickCustomerComposer(false);
+      setQuickCustomerNameInput('');
+      setQuickCustomerPhoneInput('');
+      setQuickCustomerEmailInput('');
+    },
+    [getWeekCellState]
+  );
+
+  const closeQuickSlotModal = useCallback(() => {
+    setQuickSlotDraft(null);
+    setQuickBookingServiceId('');
+    setQuickBookingCustomerId('');
+    setQuickBookingOperatorId('');
+    setShowQuickCustomerComposer(false);
+    setQuickCustomerNameInput('');
+    setQuickCustomerPhoneInput('');
+    setQuickCustomerEmailInput('');
+  }, []);
+
+  const commitAppointmentRecord = useCallback(
+    ({
+      dateValue,
+      timeValue,
+      customerName,
+      serviceName,
+      priceValue,
+      operatorIdValue,
+      operatorNameValue,
+    }: {
+      dateValue: string;
+      timeValue: string;
+      customerName: string;
+      serviceName: string;
+      priceValue: number;
+      operatorIdValue?: string;
+      operatorNameValue?: string;
+    }) => {
+      const nuovoAppuntamento: AppuntamentoItem = {
+        id: Date.now().toString(),
+        data: dateValue,
+        ora: timeValue,
+        cliente: customerName.trim(),
+        servizio: serviceName.trim(),
+        prezzo: priceValue,
+        durataMinuti: getServiceDuration(serviceName.trim()),
+        operatoreId: operatorIdValue || undefined,
+        operatoreNome: operatorNameValue || undefined,
+        incassato: false,
+        completato: false,
+      };
+
+      setAppuntamenti((current) => [nuovoAppuntamento, ...current]);
+
+      const clienteRegistrato = clienti.find(
+        (item) =>
+          item.fonte === 'frontend' &&
+          item.nome.trim().toLowerCase() === customerName.trim().toLowerCase() &&
+          !!item.telefono.trim() &&
+          !!(item.email ?? '').trim()
+      );
+
+      if (clienteRegistrato) {
+        const [nomeParte = '', ...cognomeParti] = clienteRegistrato.nome.trim().split(' ');
+        const cognomeParte = cognomeParti.join(' ');
+
+        setRichiestePrenotazione((current) => {
+          const esisteGiaNotifica = current.some(
+            (item) =>
+              item.origine === 'backoffice' &&
+              item.email.trim().toLowerCase() ===
+                (clienteRegistrato.email ?? '').trim().toLowerCase() &&
+              item.telefono.trim() === clienteRegistrato.telefono.trim() &&
+              item.data === dateValue &&
+              item.ora === timeValue &&
+              item.servizio.trim().toLowerCase() === serviceName.trim().toLowerCase()
+          );
+
+          if (esisteGiaNotifica) return current;
+
+          return [
+            {
+              id: `bo-${Date.now()}`,
+              data: dateValue,
+              ora: timeValue,
+              servizio: serviceName.trim(),
+              prezzo: priceValue,
+              durataMinuti: getServiceDuration(serviceName.trim()),
+              nome: nomeParte,
+              cognome: cognomeParte,
+              email: clienteRegistrato.email ?? '',
+              telefono: clienteRegistrato.telefono,
+              instagram: clienteRegistrato.instagram ?? '',
+              note: '',
+              operatoreId: operatorIdValue || undefined,
+              operatoreNome: operatorNameValue || undefined,
+              origine: 'backoffice',
+              stato: 'Accettata',
+              createdAt: new Date().toISOString(),
+              viewedByCliente: false,
+            },
+            ...current,
+          ];
+        });
+      }
+    },
+    [clienti, getServiceDuration, setAppuntamenti, setRichiestePrenotazione]
+  );
+
+  const addCustomerFromQuickBooking = useCallback(() => {
+    if (!quickCustomerNameInput.trim() || !quickCustomerPhoneInput.trim()) {
+      Alert.alert('Dati mancanti', 'Inserisci almeno nome cliente e telefono.');
+      return;
+    }
+
+    const nextId = `cliente-${Date.now()}`;
+    setClienti((current) => [
+      {
+        id: nextId,
+        nome: quickCustomerNameInput.trim(),
+        telefono: quickCustomerPhoneInput.trim(),
+        email: quickCustomerEmailInput.trim(),
+        instagram: '',
+        birthday: '',
+        nota: '',
+        fonte: 'salone',
+        viewedBySalon: true,
+        annullamentiCount: 0,
+        inibito: false,
+      },
+      ...current,
+    ]);
+    setQuickBookingCustomerId(nextId);
+    setShowQuickCustomerComposer(false);
+    setQuickCustomerNameInput('');
+    setQuickCustomerPhoneInput('');
+    setQuickCustomerEmailInput('');
+  }, [quickCustomerEmailInput, quickCustomerNameInput, quickCustomerPhoneInput, setClienti]);
+
+  const confirmQuickSlotBooking = useCallback(() => {
+    if (!quickSlotDraft || !selectedQuickService || !selectedQuickCustomer) {
+      return;
+    }
+
+    const selectedOperator =
+      quickBookingCompatibleOperators.find((item) => item.id === quickBookingOperatorId) ??
+      (quickBookingCompatibleOperators.length === 1
+        ? quickBookingCompatibleOperators[0]
+        : undefined);
+
+    if (
+      quickBookingOperatorSelectionRequired &&
+      (!selectedOperator || !quickBookingOperatorId.trim())
+    ) {
+      Alert.alert('Operatore richiesto', 'Seleziona un operatore per completare la prenotazione.');
+      return;
+    }
+
+    if (
+      !canScheduleServiceAtSlot({
+        dateValue: quickSlotDraft.date,
+        startTime: quickSlotDraft.time,
+        serviceName: selectedQuickService.nome,
+        selectedOperatorId: selectedOperator?.id ?? null,
+      })
+    ) {
+      Alert.alert(
+        'Slot non disponibile',
+        'Questo servizio non entra piu nello slot selezionato. Scegli un altro orario o un altro operatore.'
+      );
+      return;
+    }
+
+    commitAppointmentRecord({
+      dateValue: quickSlotDraft.date,
+      timeValue: quickSlotDraft.time,
+      customerName: selectedQuickCustomer.nome,
+      serviceName: selectedQuickService.nome,
+      priceValue: selectedQuickService.prezzo,
+      operatorIdValue: selectedOperator?.id,
+      operatorNameValue: selectedOperator?.nome,
+    });
+
+    setData(quickSlotDraft.date);
+    setCalendarMonth(quickSlotDraft.date);
+    setAgendaView('week');
+    closeQuickSlotModal();
+  }, [
+    canScheduleServiceAtSlot,
+    closeQuickSlotModal,
+    commitAppointmentRecord,
+    quickBookingCompatibleOperators,
+    quickBookingOperatorId,
+    quickBookingOperatorSelectionRequired,
+    quickSlotDraft,
+    selectedQuickCustomer,
+    selectedQuickService,
+  ]);
+
+  const addMacchinario = useCallback(() => {
+    if (!machineryNameInput.trim()) {
+      Alert.alert('Nome richiesto', 'Inserisci almeno il nome del macchinario.');
+      return;
+    }
+
+    setMacchinari((current) => [
+      {
+        id: `macchinario-${Date.now()}`,
+        nome: machineryNameInput.trim(),
+        categoria: machineryCategoryInput.trim(),
+        note: machineryNotesInput.trim(),
+        attivo: true,
+      },
+      ...current,
+    ]);
+    setMachineryNameInput('');
+    setMachineryCategoryInput('');
+    setMachineryNotesInput('');
+    setShowMachineryListExpanded(true);
+  }, [
+    machineryCategoryInput,
+    machineryNameInput,
+    machineryNotesInput,
+    setMacchinari,
+  ]);
+
+  const toggleMacchinarioAttivo = useCallback(
+    (machineryId: string) => {
+      setMacchinari((current) =>
+        current.map((item) =>
+          item.id === machineryId ? { ...item, attivo: item.attivo === false } : item
+        )
+      );
+    },
+    [setMacchinari]
+  );
+
+  const removeMacchinario = useCallback(
+    (machineryId: string) => {
+      setMacchinari((current) => current.filter((item) => item.id !== machineryId));
+    },
+    [setMacchinari]
   );
 
   const isDateFullyBooked = (dateValue: string) => {
@@ -1487,70 +1962,15 @@ export default function AgendaScreen() {
       return;
     }
 
-    const nuovoAppuntamento: AppuntamentoItem = {
-      id: Date.now().toString(),
-      data,
-      ora,
-      cliente: cliente.trim(),
-      servizio: servizio.trim(),
-      prezzo: valorePrezzo,
-      durataMinuti: getServiceDuration(servizio.trim()),
-      operatoreId: operatoreId || undefined,
-      operatoreNome: operatoreNome || undefined,
-      incassato: false,
-      completato: false,
-    };
-
-    setAppuntamenti([nuovoAppuntamento, ...appuntamenti]);
-
-    const clienteRegistrato = clienti.find(
-      (item) =>
-        item.fonte === 'frontend' &&
-        item.nome.trim().toLowerCase() === cliente.trim().toLowerCase() &&
-        !!item.telefono.trim() &&
-        !!(item.email ?? '').trim()
-    );
-
-    if (clienteRegistrato) {
-      const [nomeParte = '', ...cognomeParti] = clienteRegistrato.nome.trim().split(' ');
-      const cognomeParte = cognomeParti.join(' ');
-      const esisteGiaNotifica = richiestePrenotazione.some(
-        (item) =>
-          item.origine === 'backoffice' &&
-          item.email.trim().toLowerCase() ===
-            (clienteRegistrato.email ?? '').trim().toLowerCase() &&
-          item.telefono.trim() === clienteRegistrato.telefono.trim() &&
-          item.data === data &&
-          item.ora === ora &&
-          item.servizio.trim().toLowerCase() === servizio.trim().toLowerCase()
-      );
-
-      if (!esisteGiaNotifica) {
-        setRichiestePrenotazione([
-          {
-            id: `bo-${Date.now()}`,
-            data,
-            ora,
-            servizio: servizio.trim(),
-            prezzo: valorePrezzo,
-            durataMinuti: getServiceDuration(servizio.trim()),
-            nome: nomeParte,
-            cognome: cognomeParte,
-            email: clienteRegistrato.email ?? '',
-            telefono: clienteRegistrato.telefono,
-            instagram: clienteRegistrato.instagram ?? '',
-            note: '',
-            operatoreId: operatoreId || undefined,
-            operatoreNome: operatoreNome || undefined,
-            origine: 'backoffice',
-            stato: 'Accettata',
-            createdAt: new Date().toISOString(),
-            viewedByCliente: false,
-          },
-          ...richiestePrenotazione,
-        ]);
-      }
-    }
+    commitAppointmentRecord({
+      dateValue: data,
+      timeValue: ora,
+      customerName: cliente.trim(),
+      serviceName: servizio.trim(),
+      priceValue: valorePrezzo,
+      operatorIdValue: operatoreId || undefined,
+      operatorNameValue: operatoreNome || undefined,
+    });
 
     setData(todayDate);
     setCalendarMonth(todayDate);
@@ -3029,6 +3449,8 @@ export default function AgendaScreen() {
                             ? sezioniAgendaOggi[0]?.date
                             : card.key === 'upcoming'
                               ? sezioniAgendaProssime[0]?.date
+                              : card.key === 'week'
+                                ? ''
                               : sezioniAgendaRecenti[0]?.date) ?? ''
                         );
                       }}
@@ -3085,49 +3507,636 @@ export default function AgendaScreen() {
                     ? 'Vista attuale'
                     : agendaView === 'upcoming'
                       ? 'Vista futuri'
-                      : 'Vista archivio'}
+                      : agendaView === 'week'
+                        ? 'Planner settimanale'
+                        : 'Vista archivio'}
                 </Text>
                 <Text style={styles.agendaFocusStripTitle}>
                   {agendaView === 'today'
                     ? 'Appuntamenti di oggi'
                     : agendaView === 'upcoming'
                       ? 'Prossimi giorni da gestire'
-                      : 'Storico appuntamenti recenti'}
+                      : agendaView === 'week'
+                        ? 'Settimana completa, slot leggibili'
+                        : 'Storico appuntamenti recenti'}
                 </Text>
                 <Text style={styles.agendaFocusStripText}>
                   {agendaView === 'today'
                     ? 'Qui trovi solo la giornata corrente, cosi capisci al volo cosa resta da fare.'
                     : agendaView === 'upcoming'
                       ? 'Questa vista mostra i giorni successivi per preparare carico, operatori e disponibilita.'
-                      : 'Qui rivedi rapidamente gli appuntamenti gia passati, ordinati dai piu recenti.'}
+                      : agendaView === 'week'
+                        ? 'Ogni colonna mostra disponibilita reale, blocchi occupati e prenotazione diretta da slot libero.'
+                        : 'Qui rivedi rapidamente gli appuntamenti gia passati, ordinati dai piu recenti.'}
                 </Text>
               </View>
+
+              {agendaView === 'week' ? (
+                <View style={styles.weekPlannerCard}>
+                  <View style={styles.weekPlannerHeader}>
+                    <View style={styles.weekPlannerHeaderTextWrap}>
+                      <Text style={styles.weekPlannerEyebrow}>Settimana operativa</Text>
+                      <Text style={styles.weekPlannerTitle}>{weekRangeLabel}</Text>
+                      <Text style={styles.weekPlannerSubtitle}>
+                        Tocca uno slot libero per prenotare subito. I blocchi mostrano durata reale e operatore assegnato.
+                      </Text>
+                    </View>
+                    <View style={styles.weekPlannerLegendRow}>
+                      <View style={styles.weekLegendItem}>
+                        <View style={[styles.weekLegendDot, styles.weekLegendDotAvailable]} />
+                        <Text style={styles.weekLegendText}>Libero</Text>
+                      </View>
+                      <View style={styles.weekLegendItem}>
+                        <View style={[styles.weekLegendDot, styles.weekLegendDotBooked]} />
+                        <Text style={styles.weekLegendText}>Prenotato</Text>
+                      </View>
+                      <View style={styles.weekLegendItem}>
+                        <View style={[styles.weekLegendDot, styles.weekLegendDotBlocked]} />
+                        <Text style={styles.weekLegendText}>Bloccato</Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    <View style={styles.weekPlannerGridShell}>
+                      <View style={styles.weekPlannerTimeColumn}>
+                        <View style={styles.weekPlannerCornerCell} />
+                        {weekTimeSlots.map((slotTime) => (
+                          <View
+                            key={`week-time-${slotTime}`}
+                            style={styles.weekPlannerTimeCell}
+                          >
+                            <Text style={styles.weekPlannerTimeText}>{slotTime}</Text>
+                          </View>
+                        ))}
+                      </View>
+
+                      {weekDates.map((day) => {
+                        const appointmentsForDay = (appointmentsByDate[day.value] ?? []).length;
+                        const availableForDay = weekTimeSlots.filter(
+                          (slotTime) => getWeekCellState(day.value, slotTime) === 'available'
+                        ).length;
+                        const isSelectedDay = day.value === data;
+
+                        return (
+                          <View
+                            key={`week-day-column-${day.value}`}
+                            style={styles.weekPlannerDayColumn}
+                          >
+                            <TouchableOpacity
+                              style={[
+                                styles.weekPlannerDayHeader,
+                                isSelectedDay && styles.weekPlannerDayHeaderActive,
+                              ]}
+                              onPress={() => handleSelectDate(day.value)}
+                              activeOpacity={0.9}
+                            >
+                              <Text
+                                style={[
+                                  styles.weekPlannerDayLabel,
+                                  isSelectedDay && styles.weekPlannerDayLabelActive,
+                                ]}
+                              >
+                                {day.weekdayShort}
+                              </Text>
+                              <Text
+                                style={[
+                                  styles.weekPlannerDayNumber,
+                                  isSelectedDay && styles.weekPlannerDayNumberActive,
+                                ]}
+                              >
+                                {day.dayNumber}
+                              </Text>
+                              <Text
+                                style={[
+                                  styles.weekPlannerDayMeta,
+                                  isSelectedDay && styles.weekPlannerDayMetaActive,
+                                ]}
+                              >
+                                {appointmentsForDay} pren. · {availableForDay} liberi
+                              </Text>
+                            </TouchableOpacity>
+
+                            {weekTimeSlots.map((slotTime) => {
+                              const cellState = getWeekCellState(day.value, slotTime);
+                              const appointmentStart = getWeekAppointmentStartingAt(day.value, slotTime);
+                              const isContinuation =
+                                cellState === 'occupied' && appointmentStart === null;
+
+                              return (
+                                <View
+                                  key={`week-cell-${day.value}-${slotTime}`}
+                                  style={styles.weekPlannerCellWrap}
+                                >
+                                  {isContinuation ? (
+                                    <View style={styles.weekPlannerCellContinuation} />
+                                  ) : appointmentStart ? (
+                                    <View style={styles.weekPlannerBookedCell}>
+                                      <View
+                                        style={[
+                                          styles.weekAppointmentBlock,
+                                          {
+                                            minHeight: getWeekAppointmentBlockHeight(appointmentStart),
+                                            backgroundColor: getServiceAccentByMeta({
+                                              serviceName: appointmentStart.servizio,
+                                            }).bg,
+                                            borderColor: getServiceAccentByMeta({
+                                              serviceName: appointmentStart.servizio,
+                                            }).border,
+                                          },
+                                        ]}
+                                      >
+                                        <Text style={styles.weekAppointmentTime}>
+                                          {appointmentStart.ora} - {getAppointmentEndTime(appointmentStart)}
+                                        </Text>
+                                        <Text style={styles.weekAppointmentClient} numberOfLines={2}>
+                                          {appointmentStart.cliente}
+                                        </Text>
+                                        <Text style={styles.weekAppointmentService} numberOfLines={2}>
+                                          {appointmentStart.servizio}
+                                        </Text>
+                                        {appointmentStart.operatoreNome ? (
+                                          <Text style={styles.weekAppointmentOperator} numberOfLines={1}>
+                                            {appointmentStart.operatoreNome}
+                                          </Text>
+                                        ) : null}
+                                      </View>
+                                    </View>
+                                  ) : (
+                                    <TouchableOpacity
+                                      style={[
+                                        styles.weekPlannerCell,
+                                        cellState === 'available' && styles.weekPlannerCellAvailable,
+                                        cellState === 'blocked' && styles.weekPlannerCellBlocked,
+                                        cellState === 'outside' && styles.weekPlannerCellOutside,
+                                      ]}
+                                      onPress={() => openQuickSlotModal(day.value, slotTime)}
+                                      activeOpacity={cellState === 'available' ? 0.9 : 1}
+                                      disabled={cellState !== 'available'}
+                                    >
+                                      <Text
+                                        style={[
+                                          styles.weekPlannerCellText,
+                                          cellState === 'blocked' && styles.weekPlannerCellTextMuted,
+                                          cellState === 'outside' && styles.weekPlannerCellTextMuted,
+                                        ]}
+                                      >
+                                        {cellState === 'available'
+                                          ? 'Prenota'
+                                          : cellState === 'blocked'
+                                            ? 'Bloccato'
+                                            : 'Fuori orario'}
+                                      </Text>
+                                    </TouchableOpacity>
+                                  )}
+                                </View>
+                              );
+                            })}
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </ScrollView>
+                </View>
+              ) : null}
+            </View>
+
+            <View style={styles.searchCard}>
+              <TouchableOpacity
+                style={[styles.sectionToggleButton, styles.utilityToggleButton]}
+                onPress={() => setShowOperatorListExpanded((current) => !current)}
+                activeOpacity={0.9}
+              >
+                <View style={styles.sectionToggleTextWrap}>
+                  <Text style={styles.searchTitle}>Operatori</Text>
+                  <Text style={styles.searchSubtitle}>
+                    Blocco compatto per vedere chi copre i mestieri attivi senza invadere l&apos;agenda.
+                  </Text>
+                </View>
+                <View style={styles.sectionChevronBadge}>
+                  <Ionicons
+                    name={showOperatorListExpanded ? 'chevron-up' : 'chevron-down'}
+                    size={20}
+                    color="#111111"
+                  />
+                </View>
+              </TouchableOpacity>
+
+              {showOperatorListExpanded ? (
+                operatori.length > 0 ? (
+                  <View style={styles.operationalList}>
+                    {operatori.map((item) => (
+                      <View key={`operatore-${item.id}`} style={styles.operationalCard}>
+                        <View style={styles.operationalCardMain}>
+                          <Text style={styles.operationalTitle}>{item.nome}</Text>
+                          <Text style={styles.operationalMeta}>{item.mestiere}</Text>
+                          <Text style={styles.operationalSubmeta}>
+                            Disponibile {item.availability?.enabledWeekdays?.length ?? 0} giorni a settimana
+                          </Text>
+                        </View>
+                        <View style={styles.operationalBadge}>
+                          <Text style={styles.operationalBadgeText}>
+                            {item.availability?.dateRanges?.length ?? 0} blocchi
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <Text style={styles.sectionHint}>
+                    Nessun operatore configurato: la prenotazione continua a funzionare senza assegnazione.
+                  </Text>
+                )
+              ) : null}
+            </View>
+
+            <View style={styles.searchCard}>
+              <TouchableOpacity
+                style={[styles.sectionToggleButton, styles.utilityToggleButton]}
+                onPress={() => setShowMachineryListExpanded((current) => !current)}
+                activeOpacity={0.9}
+              >
+                <View style={styles.sectionToggleTextWrap}>
+                  <Text style={styles.searchTitle}>Macchinari</Text>
+                  <Text style={styles.searchSubtitle}>
+                    Elenco interno compatto per tenere visibili attrezzature attive, categoria e note rapide.
+                  </Text>
+                </View>
+                <View style={styles.sectionChevronBadge}>
+                  <Ionicons
+                    name={showMachineryListExpanded ? 'chevron-up' : 'chevron-down'}
+                    size={20}
+                    color="#111111"
+                  />
+                </View>
+              </TouchableOpacity>
+
+              {showMachineryListExpanded ? (
+                <>
+                  <ClearableTextInput
+                    style={[styles.input, styles.compactTopInput]}
+                    placeholder="Nome macchinario"
+                    placeholderTextColor="#8f8f8f"
+                    value={machineryNameInput}
+                    onChangeText={setMachineryNameInput}
+                    returnKeyType="next"
+                  />
+                  <ClearableTextInput
+                    style={styles.input}
+                    placeholder="Categoria o utilizzo"
+                    placeholderTextColor="#8f8f8f"
+                    value={machineryCategoryInput}
+                    onChangeText={setMachineryCategoryInput}
+                    returnKeyType="next"
+                  />
+                  <ClearableTextInput
+                    style={styles.input}
+                    placeholder="Note rapide facoltative"
+                    placeholderTextColor="#8f8f8f"
+                    value={machineryNotesInput}
+                    onChangeText={setMachineryNotesInput}
+                    returnKeyType="done"
+                    onSubmitEditing={Keyboard.dismiss}
+                  />
+
+                  <TouchableOpacity
+                    style={styles.secondaryButtonWide}
+                    onPress={addMacchinario}
+                    activeOpacity={0.9}
+                  >
+                    <Text style={styles.secondaryButtonWideText}>Aggiungi macchinario</Text>
+                  </TouchableOpacity>
+
+                  {macchinari.length > 0 ? (
+                    <View style={styles.operationalList}>
+                      {macchinari.map((item) => (
+                        <View key={`macchinario-${item.id}`} style={styles.operationalCard}>
+                          <View style={styles.operationalCardMain}>
+                            <Text style={styles.operationalTitle}>{item.nome}</Text>
+                            <Text style={styles.operationalMeta}>
+                              {item.categoria || 'Categoria non specificata'}
+                            </Text>
+                            {item.note ? (
+                              <Text style={styles.operationalSubmeta}>{item.note}</Text>
+                            ) : null}
+                          </View>
+
+                          <View style={styles.operationalActionsColumn}>
+                            <TouchableOpacity
+                              style={[
+                                styles.operationalStatusButton,
+                                item.attivo === false
+                                  ? styles.operationalStatusButtonInactive
+                                  : styles.operationalStatusButtonActive,
+                              ]}
+                              onPress={() => toggleMacchinarioAttivo(item.id)}
+                              activeOpacity={0.9}
+                            >
+                              <Text
+                                style={[
+                                  styles.operationalStatusButtonText,
+                                  item.attivo === false
+                                    ? styles.operationalStatusButtonTextInactive
+                                    : styles.operationalStatusButtonTextActive,
+                                ]}
+                              >
+                                {item.attivo === false ? 'Disattivo' : 'Attivo'}
+                              </Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                              style={styles.operationalDeleteButton}
+                              onPress={() => removeMacchinario(item.id)}
+                              activeOpacity={0.9}
+                            >
+                              <Text style={styles.operationalDeleteButtonText}>Elimina</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text style={styles.sectionHint}>
+                      Nessun macchinario salvato. Inseriscili qui per avere un riferimento rapido durante la settimana.
+                    </Text>
+                  )}
+                </>
+              ) : null}
             </View>
           </View>
         }
         renderItem={({ item }) => renderAgendaDaySection(item, true)}
         ListEmptyComponent={
-          <View style={styles.emptyAgendaState}>
-            <Text style={styles.emptyAgendaStateTitle}>
-              {agendaView === 'today'
-                ? 'Nessun appuntamento per oggi'
-                : agendaView === 'upcoming'
-                  ? 'Nessun appuntamento in arrivo'
-                  : 'Archivio ancora vuoto'}
-            </Text>
-            <Text style={styles.emptyAgendaStateText}>
-              {agendaView === 'today'
-                ? 'Puoi usare la parte alta della schermata per prenotare subito il prossimo cliente.'
-                : agendaView === 'upcoming'
-                  ? 'Quando inserirai nuovi appuntamenti nei prossimi giorni li troverai qui, ordinati per data.'
-                  : 'Appena completi le prime giornate di lavoro, qui comparira lo storico recente.'}
-            </Text>
-          </View>
+          agendaView === 'week' ? null : (
+            <View style={styles.emptyAgendaState}>
+              <Text style={styles.emptyAgendaStateTitle}>
+                {agendaView === 'today'
+                  ? 'Nessun appuntamento per oggi'
+                  : agendaView === 'upcoming'
+                    ? 'Nessun appuntamento in arrivo'
+                    : 'Archivio ancora vuoto'}
+              </Text>
+              <Text style={styles.emptyAgendaStateText}>
+                {agendaView === 'today'
+                  ? 'Puoi usare la parte alta della schermata per prenotare subito il prossimo cliente.'
+                  : agendaView === 'upcoming'
+                    ? 'Quando inserirai nuovi appuntamenti nei prossimi giorni li troverai qui, ordinati per data.'
+                    : 'Appena completi le prime giornate di lavoro, qui comparira lo storico recente.'}
+              </Text>
+            </View>
+          )
         }
         ListFooterComponent={
           <View style={styles.pastAppointmentsSection} />
         }
       />
+
+      <Modal
+        visible={!!quickSlotDraft}
+        transparent
+        animationType="fade"
+        onRequestClose={closeQuickSlotModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.quickBookingModalCard}>
+            <View style={styles.quickBookingHeaderRow}>
+              <View style={styles.quickBookingHeaderTextWrap}>
+                <Text style={styles.calendarTitle}>Prenota slot</Text>
+                <Text style={styles.modalHelperText}>
+                  {quickSlotDraft
+                    ? `${formatDateLongLocalized(quickSlotDraft.date, appLanguage)} · ${quickSlotDraft.time}`
+                    : ''}
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.timeConfigCloseButton}
+                onPress={closeQuickSlotModal}
+                activeOpacity={0.9}
+              >
+                <Text style={styles.timeConfigCloseButtonText}>×</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.quickBookingContent}
+            >
+              <Text style={styles.quickBookingSectionTitle}>Servizio</Text>
+              <View style={styles.quickBookingChipWrap}>
+                {servizi.map((item) => {
+                  const selected = item.id === quickBookingServiceId;
+                  const selectable =
+                    !quickSlotDraft ||
+                    canScheduleServiceAtSlot({
+                      dateValue: quickSlotDraft.date,
+                      startTime: quickSlotDraft.time,
+                      serviceName: item.nome,
+                      selectedOperatorId: null,
+                    });
+
+                  return (
+                    <TouchableOpacity
+                      key={`quick-service-${item.id}`}
+                      style={[
+                        styles.quickBookingChip,
+                        selected && styles.quickBookingChipActive,
+                        !selectable && styles.quickBookingChipDisabled,
+                      ]}
+                      onPress={() => {
+                        if (!selectable) return;
+                        setQuickBookingServiceId(item.id);
+                        setQuickBookingOperatorId('');
+                      }}
+                      activeOpacity={selectable ? 0.9 : 1}
+                      disabled={!selectable}
+                    >
+                      <Text
+                        style={[
+                          styles.quickBookingChipTitle,
+                          selected && styles.quickBookingChipTitleActive,
+                        ]}
+                      >
+                        {item.nome}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.quickBookingChipMeta,
+                          selected && styles.quickBookingChipMetaActive,
+                        ]}
+                      >
+                        € {item.prezzo.toFixed(2)} · {item.durataMinuti ?? 60} min
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <Text style={styles.quickBookingSectionTitle}>Cliente</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={styles.quickBookingInlineRow}>
+                  {quickBookingCustomerOptions.map((item) => {
+                    const selected = item.id === quickBookingCustomerId;
+
+                    return (
+                      <TouchableOpacity
+                        key={`quick-customer-${item.id}`}
+                        style={[
+                          styles.quickCustomerChip,
+                          selected && styles.quickCustomerChipActive,
+                        ]}
+                        onPress={() => setQuickBookingCustomerId(item.id)}
+                        activeOpacity={0.9}
+                      >
+                        <Text
+                          style={[
+                            styles.quickCustomerChipText,
+                            selected && styles.quickCustomerChipTextActive,
+                          ]}
+                        >
+                          {item.nome}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+
+                  <TouchableOpacity
+                    style={styles.quickCustomerAddChip}
+                    onPress={() => setShowQuickCustomerComposer((current) => !current)}
+                    activeOpacity={0.9}
+                  >
+                    <Text style={styles.quickCustomerAddChipText}>
+                      {showQuickCustomerComposer ? 'Chiudi nuovo cliente' : '+ Nuovo cliente'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+
+              {showQuickCustomerComposer ? (
+                <View style={styles.quickCustomerComposer}>
+                  <ClearableTextInput
+                    style={[styles.input, styles.compactTopInput]}
+                    placeholder="Nome cliente"
+                    placeholderTextColor="#8f8f8f"
+                    value={quickCustomerNameInput}
+                    onChangeText={setQuickCustomerNameInput}
+                  />
+                  <ClearableTextInput
+                    style={styles.input}
+                    placeholder="Telefono"
+                    placeholderTextColor="#8f8f8f"
+                    value={quickCustomerPhoneInput}
+                    onChangeText={setQuickCustomerPhoneInput}
+                    keyboardType="phone-pad"
+                  />
+                  <ClearableTextInput
+                    style={styles.input}
+                    placeholder="Email facoltativa"
+                    placeholderTextColor="#8f8f8f"
+                    value={quickCustomerEmailInput}
+                    onChangeText={setQuickCustomerEmailInput}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+
+                  <TouchableOpacity
+                    style={styles.secondaryButtonWide}
+                    onPress={addCustomerFromQuickBooking}
+                    activeOpacity={0.9}
+                  >
+                    <Text style={styles.secondaryButtonWideText}>Salva cliente rapido</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+
+              {quickBookingUsesOperators ? (
+                <>
+                  <Text style={styles.quickBookingSectionTitle}>Operatore</Text>
+                  <View style={styles.quickBookingChipWrap}>
+                    {quickBookingCompatibleOperators.map((item) => {
+                      const selected = item.id === quickBookingOperatorId;
+
+                      return (
+                        <TouchableOpacity
+                          key={`quick-operator-${item.id}`}
+                          style={[
+                            styles.quickBookingChip,
+                            selected && styles.quickBookingChipActive,
+                          ]}
+                          onPress={() => setQuickBookingOperatorId(item.id)}
+                          activeOpacity={0.9}
+                        >
+                          <Text
+                            style={[
+                              styles.quickBookingChipTitle,
+                              selected && styles.quickBookingChipTitleActive,
+                            ]}
+                          >
+                            {item.nome}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.quickBookingChipMeta,
+                              selected && styles.quickBookingChipMetaActive,
+                            ]}
+                          >
+                            {item.mestiere}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </>
+              ) : null}
+
+              <View style={styles.quickBookingSummaryCard}>
+                <Text style={styles.summaryTitle}>Riepilogo rapido</Text>
+                <Text style={styles.summaryText}>
+                  Servizio: {selectedQuickService?.nome || '—'}
+                </Text>
+                <Text style={styles.summaryText}>
+                  Cliente: {selectedQuickCustomer?.nome || '—'}
+                </Text>
+                <Text style={styles.summaryText}>
+                  Operatore:{' '}
+                  {quickBookingOperatorSelectionRequired
+                    ? quickBookingCompatibleOperators.find((item) => item.id === quickBookingOperatorId)
+                        ?.nome || '—'
+                    : quickBookingCompatibleOperators[0]?.nome || 'Assegnazione non richiesta'}
+                </Text>
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalActionsRow}>
+              <TouchableOpacity
+                style={styles.modalSecondaryButton}
+                onPress={closeQuickSlotModal}
+                activeOpacity={0.9}
+              >
+                <Text style={styles.modalSecondaryButtonText}>Annulla</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.modalPrimaryButton,
+                  (!selectedQuickService ||
+                    !selectedQuickCustomer ||
+                    (quickBookingOperatorSelectionRequired && !quickBookingOperatorId)) &&
+                    styles.primaryButtonDisabled,
+                ]}
+                onPress={confirmQuickSlotBooking}
+                activeOpacity={0.9}
+                disabled={
+                  !selectedQuickService ||
+                  !selectedQuickCustomer ||
+                  (quickBookingOperatorSelectionRequired && !quickBookingOperatorId)
+                }
+              >
+                <Text style={styles.modalPrimaryButtonText}>Conferma slot</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={showCalendarModal}
@@ -4235,6 +5244,432 @@ const styles = StyleSheet.create({
     lineHeight: 21,
     color: '#64748b',
     textAlign: 'center',
+  },
+  weekPlannerCard: {
+    marginTop: 14,
+    backgroundColor: '#f8fbff',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: '#d9e5f1',
+    padding: 14,
+  },
+  weekPlannerHeader: {
+    marginBottom: 12,
+  },
+  weekPlannerHeaderTextWrap: {
+    marginBottom: 10,
+  },
+  weekPlannerEyebrow: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#64748b',
+    marginBottom: 4,
+  },
+  weekPlannerTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#111827',
+    marginBottom: 6,
+  },
+  weekPlannerSubtitle: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  weekPlannerLegendRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  weekLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#dbe4ec',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  weekLegendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+  },
+  weekLegendDotAvailable: {
+    backgroundColor: '#34d399',
+  },
+  weekLegendDotBooked: {
+    backgroundColor: '#111827',
+  },
+  weekLegendDotBlocked: {
+    backgroundColor: '#f59e0b',
+  },
+  weekLegendText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#334155',
+  },
+  weekPlannerGridShell: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  weekPlannerTimeColumn: {
+    width: 58,
+    marginRight: 8,
+  },
+  weekPlannerCornerCell: {
+    height: 76,
+  },
+  weekPlannerTimeCell: {
+    height: WEEK_PLANNER_ROW_HEIGHT,
+    marginBottom: WEEK_PLANNER_ROW_GAP,
+    justifyContent: 'flex-start',
+    alignItems: 'flex-end',
+    paddingRight: 8,
+  },
+  weekPlannerTimeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#64748b',
+  },
+  weekPlannerDayColumn: {
+    width: WEEK_PLANNER_DAY_WIDTH,
+    marginRight: 8,
+  },
+  weekPlannerDayHeader: {
+    minHeight: 68,
+    borderRadius: 18,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#dbe4ec',
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    marginBottom: 8,
+    alignItems: 'center',
+  },
+  weekPlannerDayHeaderActive: {
+    backgroundColor: '#111827',
+    borderColor: '#111827',
+  },
+  weekPlannerDayLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#64748b',
+    marginBottom: 3,
+  },
+  weekPlannerDayLabelActive: {
+    color: '#cbd5e1',
+  },
+  weekPlannerDayNumber: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  weekPlannerDayNumberActive: {
+    color: '#ffffff',
+  },
+  weekPlannerDayMeta: {
+    fontSize: 10,
+    lineHeight: 14,
+    fontWeight: '700',
+    color: '#64748b',
+    textAlign: 'center',
+  },
+  weekPlannerDayMetaActive: {
+    color: '#e2e8f0',
+  },
+  weekPlannerCellWrap: {
+    height: WEEK_PLANNER_ROW_HEIGHT,
+    marginBottom: WEEK_PLANNER_ROW_GAP,
+  },
+  weekPlannerCell: {
+    flex: 1,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#dbe4ec',
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  weekPlannerCellAvailable: {
+    backgroundColor: '#ecfdf5',
+    borderColor: '#a7f3d0',
+  },
+  weekPlannerCellBlocked: {
+    backgroundColor: '#fff7ed',
+    borderColor: '#fdba74',
+  },
+  weekPlannerCellOutside: {
+    backgroundColor: '#f8fafc',
+    borderColor: '#e2e8f0',
+  },
+  weekPlannerCellContinuation: {
+    flex: 1,
+    borderRadius: 18,
+    backgroundColor: '#eef2f7',
+    opacity: 0.35,
+  },
+  weekPlannerCellText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#047857',
+    textAlign: 'center',
+  },
+  weekPlannerCellTextMuted: {
+    color: '#94a3b8',
+  },
+  weekPlannerBookedCell: {
+    flex: 1,
+  },
+  weekAppointmentBlock: {
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    justifyContent: 'flex-start',
+    overflow: 'hidden',
+  },
+  weekAppointmentTime: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#0f172a',
+    marginBottom: 4,
+  },
+  weekAppointmentClient: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#111827',
+    marginBottom: 3,
+  },
+  weekAppointmentService: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#334155',
+    marginBottom: 4,
+  },
+  weekAppointmentOperator: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  operationalList: {
+    marginTop: 12,
+    gap: 10,
+  },
+  operationalCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#dbe4ec',
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  operationalCardMain: {
+    flex: 1,
+  },
+  operationalTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#111827',
+    marginBottom: 3,
+  },
+  operationalMeta: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#334155',
+    marginBottom: 2,
+  },
+  operationalSubmeta: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#64748b',
+    fontWeight: '600',
+  },
+  operationalBadge: {
+    minWidth: 78,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    backgroundColor: '#eef2f7',
+    borderWidth: 1,
+    borderColor: '#dbe4ec',
+    alignItems: 'center',
+  },
+  operationalBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#334155',
+  },
+  operationalActionsColumn: {
+    alignItems: 'flex-end',
+    gap: 8,
+  },
+  operationalStatusButton: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+  },
+  operationalStatusButtonActive: {
+    backgroundColor: '#dcfce7',
+    borderColor: '#86efac',
+  },
+  operationalStatusButtonInactive: {
+    backgroundColor: '#f1f5f9',
+    borderColor: '#cbd5e1',
+  },
+  operationalStatusButtonText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  operationalStatusButtonTextActive: {
+    color: '#166534',
+  },
+  operationalStatusButtonTextInactive: {
+    color: '#475569',
+  },
+  operationalDeleteButton: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#fee2e2',
+  },
+  operationalDeleteButtonText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#b91c1c',
+  },
+  compactTopInput: {
+    marginTop: 12,
+  },
+  quickBookingModalCard: {
+    width: '100%',
+    maxWidth: 520,
+    maxHeight: '88%',
+    backgroundColor: '#ffffff',
+    borderRadius: 30,
+    padding: 20,
+  },
+  quickBookingHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    gap: 12,
+  },
+  quickBookingHeaderTextWrap: {
+    flex: 1,
+  },
+  quickBookingContent: {
+    paddingBottom: 8,
+  },
+  quickBookingSectionTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#111827',
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  quickBookingChipWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  quickBookingChip: {
+    minWidth: '48%',
+    backgroundColor: '#f8fafc',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#dbe4ec',
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+  },
+  quickBookingChipActive: {
+    backgroundColor: '#111827',
+    borderColor: '#111827',
+  },
+  quickBookingChipDisabled: {
+    opacity: 0.42,
+  },
+  quickBookingChipTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#111827',
+    marginBottom: 3,
+  },
+  quickBookingChipTitleActive: {
+    color: '#ffffff',
+  },
+  quickBookingChipMeta: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748b',
+  },
+  quickBookingChipMetaActive: {
+    color: '#cbd5e1',
+  },
+  quickBookingInlineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingRight: 8,
+  },
+  quickCustomerChip: {
+    backgroundColor: '#eef2f7',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderWidth: 1,
+    borderColor: '#dbe4ec',
+  },
+  quickCustomerChipActive: {
+    backgroundColor: '#111827',
+    borderColor: '#111827',
+  },
+  quickCustomerChipText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#334155',
+  },
+  quickCustomerChipTextActive: {
+    color: '#ffffff',
+  },
+  quickCustomerAddChip: {
+    backgroundColor: '#fff7ed',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderWidth: 1,
+    borderColor: '#fdba74',
+  },
+  quickCustomerAddChipText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#9a3412',
+  },
+  quickCustomerComposer: {
+    marginTop: 10,
+    backgroundColor: '#f8fafc',
+    borderRadius: 20,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#dbe4ec',
+  },
+  quickBookingSummaryCard: {
+    marginTop: 14,
+    backgroundColor: '#f8fafc',
+    borderRadius: 20,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#dbe4ec',
   },
   sectionToggleButton: {
     width: '100%',
