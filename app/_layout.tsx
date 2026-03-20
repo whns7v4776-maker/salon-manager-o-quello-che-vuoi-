@@ -5,10 +5,11 @@ import { PlayfairDisplay_700Bold } from '@expo-google-fonts/playfair-display';
 import { Rajdhani_700Bold } from '@expo-google-fonts/rajdhani';
 import { useFonts } from 'expo-font';
 import * as LocalAuthentication from 'expo-local-authentication';
-import { Stack } from 'expo-router';
+import { Redirect, Stack, useSegments, type Href } from 'expo-router';
 import React from 'react';
 import {
   ActivityIndicator,
+  Platform,
   Text,
   TouchableOpacity,
   View,
@@ -21,7 +22,10 @@ import {
   configurePushNotifications,
   registerPushNotifications,
 } from '../src/lib/push/push-notifications';
-import { OwnerAccessScreen } from '../src/screens/OwnerAccessScreen';
+
+const OWNER_PROTECTED_SEGMENTS = new Set(['(tabs)', 'impostazioni']);
+const PUBLIC_SEGMENTS = new Set(['', 'cliente', 'cliente-impostazioni', 'join', 'proprietario']);
+const OWNER_ROUTE = '/proprietario' as Href;
 
 function AppContent() {
   const {
@@ -33,9 +37,13 @@ function AppContent() {
     workspaceAccessAllowed,
     logoutOwnerAccount,
   } = useAppContext();
+  const segments = useSegments();
   const biometricCopy = getBiometricCopy(appLanguage, process.env.EXPO_OS === 'ios' ? 'ios' : 'generic');
   const [biometricPassed, setBiometricPassed] = React.useState(false);
   const [biometricChecking, setBiometricChecking] = React.useState(false);
+  const firstSegment = segments[0] ?? '';
+  const isOwnerProtectedRoute = OWNER_PROTECTED_SEGMENTS.has(firstSegment);
+  const isPublicRoute = PUBLIC_SEGMENTS.has(firstSegment) || !isOwnerProtectedRoute;
 
   const requestBiometricUnlock = React.useCallback(async () => {
     if (!biometricEnabled || !isAuthenticated) {
@@ -108,11 +116,15 @@ function AppContent() {
     );
   }
 
-  if (!isAuthenticated) {
-    return <OwnerAccessScreen />;
+  if (isOwnerProtectedRoute && !isAuthenticated) {
+    return <Redirect href={OWNER_ROUTE} />;
   }
 
-  if (biometricEnabled && !biometricPassed) {
+  if (Platform.OS !== 'web' && !isAuthenticated && !isPublicRoute) {
+    return <Redirect href={OWNER_ROUTE} />;
+  }
+
+  if (isOwnerProtectedRoute && biometricEnabled && !biometricPassed) {
     return (
       <View
         style={{
@@ -207,7 +219,7 @@ function AppContent() {
     );
   }
 
-  if (!workspaceAccessAllowed) {
+  if (isOwnerProtectedRoute && !workspaceAccessAllowed) {
     return (
       <View
         style={{

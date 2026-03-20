@@ -227,6 +227,7 @@ export default function ClienteFrontendScreen() {
     operatori,
     salonWorkspace,
     availabilitySettings,
+    isAuthenticated,
     resolveSalonByCode,
     upsertFrontendCustomerForSalon,
     addBookingRequestForSalon,
@@ -255,11 +256,12 @@ export default function ClienteFrontendScreen() {
   const initialSalonCodeParam = Array.isArray(searchParams.salon)
     ? searchParams.salon[0]
     : searchParams.salon;
+  const canUseWorkspaceFallback = Platform.OS !== 'web' || isAuthenticated;
   const [selectedSalonCode, setSelectedSalonCode] = useState(
-    initialSalonCodeParam || salonWorkspace.salonCode
+    initialSalonCodeParam || (canUseWorkspaceFallback ? salonWorkspace.salonCode : '')
   );
   const [salonCodeDraft, setSalonCodeDraft] = useState(
-    initialSalonCodeParam || salonWorkspace.salonCode
+    initialSalonCodeParam || (canUseWorkspaceFallback ? salonWorkspace.salonCode : '')
   );
   const [publicSalonState, setPublicSalonState] = useState<PublicSalonState | null>(null);
   const [isLoadingSalon, setIsLoadingSalon] = useState(false);
@@ -268,7 +270,8 @@ export default function ClienteFrontendScreen() {
 
   const normalizedSelectedSalonCode = normalizeSalonCode(selectedSalonCode);
   const isCurrentWorkspaceSalon =
-    !normalizedSelectedSalonCode || normalizedSelectedSalonCode === salonWorkspace.salonCode;
+    canUseWorkspaceFallback &&
+    (!normalizedSelectedSalonCode || normalizedSelectedSalonCode === salonWorkspace.salonCode);
   const effectiveWorkspace = isCurrentWorkspaceSalon
     ? salonWorkspace
     : publicSalonState?.workspace ?? null;
@@ -1444,7 +1447,12 @@ export default function ClienteFrontendScreen() {
                 onPress={() =>
                   router.push({
                     pathname: '/cliente-impostazioni',
-                    params: { salon: normalizedSelectedSalonCode || salonWorkspace.salonCode },
+                    params: {
+                      salon:
+                        effectiveWorkspace?.salonCode ||
+                        normalizedSelectedSalonCode ||
+                        undefined,
+                    },
                   })
                 }
                 activeOpacity={0.9}

@@ -71,7 +71,7 @@ export default function JoinSalonScreen() {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" />
-        <Text style={styles.text}>Collegamento al salone in corso...</Text>
+        <Text style={styles.text}>Accesso all'area cliente del salone in corso...</Text>
       </View>
     );
   }
@@ -81,7 +81,7 @@ export default function JoinSalonScreen() {
       <View style={styles.center}>
         <Text style={styles.error}>Codice salone non valido o mancante</Text>
         <TouchableOpacity style={styles.button} onPress={() => router.replace('/')}>
-          <Text style={styles.buttonText}>Torna alla home</Text>
+          <Text style={styles.buttonText}>Torna all'area cliente</Text>
         </TouchableOpacity>
       </View>
     );
@@ -89,9 +89,9 @@ export default function JoinSalonScreen() {
 
   return (
     <View style={styles.center}>
-      <Text style={styles.success}>Salone collegato</Text>
+      <Text style={styles.success}>Area cliente collegata</Text>
       <Text style={styles.code}>{salonName || normalizedCode}</Text>
-      <Text style={styles.text}>Apertura frontend cliente...</Text>
+      <Text style={styles.text}>Stai entrando nel salone come cliente.</Text>
 
       <TouchableOpacity
         style={styles.button}
@@ -102,7 +102,7 @@ export default function JoinSalonScreen() {
           })
         }
       >
-        <Text style={styles.buttonText}>Apri frontend cliente</Text>
+        <Text style={styles.buttonText}>Apri area cliente</Text>
       </TouchableOpacity>
     </View>
   );
