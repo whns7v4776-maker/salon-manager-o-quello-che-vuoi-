@@ -345,31 +345,34 @@ export default function HomeScreen() {
   ].filter((value) => value.trim() !== '').length;
 
   const brandName =
-    salonNameInput.trim() ? toUppercaseField(salonNameInput) : 'SALON PRO';
-  const publicClientBaseUrl = useMemo(() => {
-    const extra = Constants.expoConfig?.extra as { publicClientBaseUrl?: string } | undefined;
-    return extra?.publicClientBaseUrl?.trim().replace(/\/+$/, '') ?? '';
-  }, []);
-  const hasPublicClientWeb =
-    publicClientBaseUrl.startsWith('http://') || publicClientBaseUrl.startsWith('https://');
-  const salonClientJoinPath = useMemo(
-    () => `/join/${salonWorkspace.salonCode}`,
-    [salonWorkspace.salonCode]
-  );
+  salonNameInput.trim() ? toUppercaseField(salonNameInput) : 'SALON PRO';
 
-  const canEditSalonProfile = isEditingSalonProfile;
+const publicClientBaseUrl = useMemo(() => {
+  const extra = Constants.expoConfig?.extra as { publicClientBaseUrl?: string } | undefined;
+  return extra?.publicClientBaseUrl?.trim().replace(/\/+$/, '') ?? '';
+}, []);
 
-  const salonClientLink = useMemo(
-    () => (hasPublicClientWeb ? `${publicClientBaseUrl}${salonClientJoinPath}` : ''),
-    [hasPublicClientWeb, publicClientBaseUrl, salonClientJoinPath]
-  );
+const hasPublicClientWeb =
+  publicClientBaseUrl.startsWith('http://') || publicClientBaseUrl.startsWith('https://');
 
-  const openFrontendPreviewForAdmin = useCallback(() => {
-    router.push({
-      pathname: '/cliente',
-      params: { salon: salonWorkspace.salonCode },
-    });
-  }, [router, salonWorkspace.salonCode]);
+const salonClientJoinPath = useMemo(
+  () => `/join/${salonWorkspace.salonCode}`,
+  [salonWorkspace.salonCode]
+);
+
+const canEditSalonProfile = isEditingSalonProfile;
+
+const salonClientLink = useMemo(
+  () => (hasPublicClientWeb ? `${publicClientBaseUrl}${salonClientJoinPath}` : ''),
+  [hasPublicClientWeb, publicClientBaseUrl, salonClientJoinPath]
+);
+
+const openFrontendPreviewForAdmin = useCallback(() => {
+  router.push({
+    pathname: '/cliente',
+    params: { salon: salonWorkspace.salonCode },
+  });
+}, [router, salonWorkspace.salonCode]);
 
   const markBiometricPromptAsSeen = useCallback(async () => {
     if (!salonAccountEmail) return;

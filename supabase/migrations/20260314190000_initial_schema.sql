@@ -167,7 +167,7 @@ create table if not exists public.services (
   duration_minutes integer not null default 60 check (duration_minutes > 0 and duration_minutes <= 480),
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now()),
-  unique (workspace_id, lower(name))
+  unique (workspace_id, name)
 );
 
 create table if not exists public.customers (
