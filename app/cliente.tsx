@@ -256,7 +256,7 @@ export default function ClienteFrontendScreen() {
   const initialSalonCodeParam = Array.isArray(searchParams.salon)
     ? searchParams.salon[0]
     : searchParams.salon;
-  const canUseWorkspaceFallback = Platform.OS !== 'web' || isAuthenticated;
+  const canUseWorkspaceFallback = Platform.OS !== 'web';
   const [selectedSalonCode, setSelectedSalonCode] = useState(
     initialSalonCodeParam || (canUseWorkspaceFallback ? salonWorkspace.salonCode : '')
   );

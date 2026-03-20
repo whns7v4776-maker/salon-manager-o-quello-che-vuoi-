@@ -13,7 +13,7 @@ export function HeroSalonName({
   displayStyle = 'corsivo',
   fontVariant = 'neon',
 }: HeroSalonNameProps) {
-  const baseName = salonName !== 'Il tuo salone' ? salonName : 'Il tuo salone';
+  const baseName = salonName.trim() || 'Salon Pro';
   const displayName =
     displayStyle === 'stampatello'
       ? baseName.toLocaleUpperCase('it-IT')

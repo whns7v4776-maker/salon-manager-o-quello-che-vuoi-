@@ -53,7 +53,7 @@
     },
     "extra": {
       "router": {},
-      "publicClientBaseUrl": "",
+      "publicClientBaseUrl": "https://salon-manager-o-quello-che-vuoi-4xtx2jg5b.vercel.app",
       "eas": {
         "projectId": "cde34c38-a843-4af6-a402-0631fb9f5779"
       }

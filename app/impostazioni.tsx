@@ -110,9 +110,7 @@ export default function ImpostazioniScreen() {
             <Text style={styles.title}>{tApp(appLanguage, 'settings_title')}</Text>
             <View style={styles.screenBrandChip}>
               <Text style={styles.screenBrandChipText}>
-                {salonWorkspace.salonName !== 'Il tuo salone'
-                  ? salonWorkspace.salonName
-                  : 'Salon Pro'}
+                  {salonWorkspace.salonName.trim() || 'Salon Pro'}
               </Text>
             </View>
           </View>
