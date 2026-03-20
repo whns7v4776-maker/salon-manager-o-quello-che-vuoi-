@@ -224,17 +224,16 @@ export default function PrenotazioniScreen() {
           salonName={salonWorkspace.salonName}
           salonNameDisplayStyle={salonWorkspace.salonNameDisplayStyle}
           salonNameFontVariant={salonWorkspace.salonNameFontVariant}
-          iconOffsetY={5}
         />
 
         <View style={styles.heroStatsRow}>
           <View style={styles.heroStatCardBlue}>
             <Text style={styles.heroStatNumber}>{richiesteInAttesa.length}</Text>
-            <Text style={styles.heroStatLabel}>{tApp(appLanguage, 'requests_pending')}</Text>
+            <Text style={styles.heroStatLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.68}>{tApp(appLanguage, 'requests_pending')}</Text>
           </View>
           <View style={styles.heroStatCardMint}>
             <Text style={styles.heroStatNumber}>{richiesteGestite.length}</Text>
-            <Text style={styles.heroStatLabel}>{tApp(appLanguage, 'requests_handled')}</Text>
+            <Text style={styles.heroStatLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.68}>{tApp(appLanguage, 'requests_handled')}</Text>
           </View>
         </View>
         <Text style={styles.subtitle}>{tApp(appLanguage, 'requests_subtitle')}</Text>
@@ -247,7 +246,7 @@ export default function PrenotazioniScreen() {
         ]}
       >
         <View style={[styles.desktopColumnLeft, !responsive.isDesktop && styles.desktopColumnStack]}>
-          <Text style={styles.sectionTitle}>{tApp(appLanguage, 'requests_to_approve')}</Text>
+          <Text style={styles.sectionTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{tApp(appLanguage, 'requests_to_approve')}</Text>
           {richiesteInAttesa.length === 0 ? (
             <View style={[styles.emptyCard, responsive.isDesktop && styles.wideCard]}>
               <Text style={styles.emptyTitle}>{tApp(appLanguage, 'requests_no_pending')}</Text>
@@ -268,7 +267,7 @@ export default function PrenotazioniScreen() {
                   <Text style={styles.requestMeta}>{formatDateLong(item.data)} · {item.ora}</Text>
                 </View>
                 <View style={styles.pendingBadge}>
-                  <Text style={styles.pendingBadgeText}>
+                  <Text style={styles.pendingBadgeText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76}>
                     {item.stato === 'Annullata'
                       ? tApp(appLanguage, 'requests_cancelled_badge')
                       : tApp(appLanguage, 'requests_pending')}
@@ -278,12 +277,12 @@ export default function PrenotazioniScreen() {
 
               <View style={styles.infoGrid}>
                 <View style={styles.infoBox}>
-                  <Text style={styles.infoLabel}>{tApp(appLanguage, 'requests_service')}</Text>
-                  <Text style={styles.infoValue}>{item.servizio}</Text>
+                  <Text style={styles.infoLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.68}>{tApp(appLanguage, 'requests_service')}</Text>
+                  <Text style={styles.infoValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.66}>{item.servizio}</Text>
                 </View>
                 <View style={styles.infoBox}>
-                  <Text style={styles.infoLabel}>{tApp(appLanguage, 'requests_price')}</Text>
-                  <Text style={styles.infoValue}>€ {item.prezzo.toFixed(2)}</Text>
+                  <Text style={styles.infoLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.68}>{tApp(appLanguage, 'requests_price')}</Text>
+                  <Text style={styles.infoValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>€ {item.prezzo.toFixed(2)}</Text>
                 </View>
               </View>
               {item.operatoreNome ? (
@@ -299,14 +298,14 @@ export default function PrenotazioniScreen() {
                   onPress={() => openExternalUrl(`tel:${buildDialablePhone(item.telefono)}`)}
                   activeOpacity={0.9}
                 >
-                  <Text style={styles.quickActionChipText}>Chiama</Text>
+                  <Text style={styles.quickActionChipText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76}>Chiama</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.quickActionChip, styles.quickActionChipWhatsapp]}
                   onPress={() => openExternalUrl(buildWhatsappUrl(item.telefono))}
                   activeOpacity={0.9}
                 >
-                  <Text style={[styles.quickActionChipText, styles.quickActionChipWhatsappText]}>
+                  <Text style={[styles.quickActionChipText, styles.quickActionChipWhatsappText]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76}>
                     WhatsApp
                   </Text>
                 </TouchableOpacity>
@@ -316,7 +315,7 @@ export default function PrenotazioniScreen() {
                     onPress={() => openExternalUrl(buildInstagramUrl(item.instagram))}
                     activeOpacity={0.9}
                   >
-                    <Text style={[styles.quickActionChipText, styles.quickActionChipInstagramText]}>
+                    <Text style={[styles.quickActionChipText, styles.quickActionChipInstagramText]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76}>
                       Instagram
                     </Text>
                   </TouchableOpacity>
@@ -332,14 +331,14 @@ export default function PrenotazioniScreen() {
                     onPress={() => accettaRichiesta(item.id)}
                     activeOpacity={0.9}
                   >
-                    <Text style={styles.acceptButtonText}>{tApp(appLanguage, 'requests_accept')}</Text>
+                    <Text style={styles.acceptButtonText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76}>{tApp(appLanguage, 'requests_accept')}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.rejectButton}
                     onPress={() => rifiutaRichiesta(item.id)}
                     activeOpacity={0.9}
                   >
-                    <Text style={styles.rejectButtonText}>{tApp(appLanguage, 'requests_reject')}</Text>
+                    <Text style={styles.rejectButtonText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76}>{tApp(appLanguage, 'requests_reject')}</Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -348,7 +347,7 @@ export default function PrenotazioniScreen() {
         </View>
 
         <View style={[styles.desktopColumnRight, !responsive.isDesktop && styles.desktopColumnStack]}>
-          <Text style={styles.sectionTitle}>{tApp(appLanguage, 'requests_history')}</Text>
+          <Text style={styles.sectionTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{tApp(appLanguage, 'requests_history')}</Text>
           {richiesteGestite.map((item) => (
             <View
               key={item.id}
@@ -367,14 +366,14 @@ export default function PrenotazioniScreen() {
                   onPress={() => openExternalUrl(`tel:${buildDialablePhone(item.telefono)}`)}
                   activeOpacity={0.9}
                 >
-                  <Text style={styles.quickActionChipText}>Chiama</Text>
+                  <Text style={styles.quickActionChipText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76}>Chiama</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.quickActionChip, styles.quickActionChipWhatsapp]}
                   onPress={() => openExternalUrl(buildWhatsappUrl(item.telefono))}
                   activeOpacity={0.9}
                 >
-                  <Text style={[styles.quickActionChipText, styles.quickActionChipWhatsappText]}>
+                  <Text style={[styles.quickActionChipText, styles.quickActionChipWhatsappText]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76}>
                     WhatsApp
                   </Text>
                 </TouchableOpacity>
@@ -384,7 +383,7 @@ export default function PrenotazioniScreen() {
                     onPress={() => openExternalUrl(buildInstagramUrl(item.instagram))}
                     activeOpacity={0.9}
                   >
-                    <Text style={[styles.quickActionChipText, styles.quickActionChipInstagramText]}>
+                    <Text style={[styles.quickActionChipText, styles.quickActionChipInstagramText]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76}>
                       Instagram
                     </Text>
                   </TouchableOpacity>

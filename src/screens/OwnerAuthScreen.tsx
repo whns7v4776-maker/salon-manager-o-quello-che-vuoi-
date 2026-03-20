@@ -24,6 +24,10 @@ const EMPTY_REGISTER = {
   lastName: '',
   salonName: '',
   businessPhone: '',
+  streetLine: '',
+  city: '',
+  postalCode: '',
+  activityCategory: '',
   email: '',
   password: '',
 };
@@ -38,6 +42,7 @@ export default function OwnerAuthScreen() {
   const registerSalonNameRef = useRef<TextInput | null>(null);
   const registerEmailRef = useRef<TextInput | null>(null);
   const registerBusinessPhoneRef = useRef<TextInput | null>(null);
+  const registerActivityCategoryRef = useRef<TextInput | null>(null);
   const registerPasswordRef = useRef<TextInput | null>(null);
   const [login, setLogin] = useState(EMPTY_LOGIN);
   const [register, setRegister] = useState(EMPTY_REGISTER);
@@ -220,7 +225,21 @@ export default function OwnerAuthScreen() {
                   setRegister((current) => ({ ...current, salonName: value }))
                 }
                 returnKeyType="next"
-                onSubmitEditing={() => registerEmailRef.current?.focus()}
+                onSubmitEditing={() => registerActivityCategoryRef.current?.focus()}
+                blurOnSubmit={false}
+              />
+              <TextInput
+                ref={registerActivityCategoryRef}
+                style={styles.input}
+                placeholder="Categoria attività"
+                placeholderTextColor="#9a9a9a"
+                value={register.activityCategory}
+                onChangeText={(value) =>
+                  setRegister((current) => ({ ...current, activityCategory: value }))
+                }
+                autoCapitalize="characters"
+                returnKeyType="next"
+                onSubmitEditing={() => registerBusinessPhoneRef.current?.focus()}
                 blurOnSubmit={false}
               />
               <TextInput

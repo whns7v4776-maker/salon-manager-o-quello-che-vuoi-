@@ -17,6 +17,7 @@ import { AppLanguage, resolveStoredAppLanguage } from '../lib/i18n';
 import {
     buildSalonCode,
     createDefaultWorkspace,
+    formatSalonAddress,
     isWorkspaceAccessible,
     normalizeSalonCode,
     normalizeWorkspace,
@@ -67,7 +68,10 @@ type OwnerAccount = {
   lastName: string;
   salonName: string;
   businessPhone: string;
-  activityCategory?: string;
+  streetLine: string;
+  city: string;
+  postalCode: string;
+  activityCategory: string;
   email: string;
   password: string;
   createdAt: string;
@@ -294,7 +298,10 @@ type AppContextType = {
     lastName: string;
     salonName: string;
     businessPhone: string;
-    activityCategory?: string;
+    streetLine: string;
+    city: string;
+    postalCode: string;
+    activityCategory: string;
     email: string;
     password: string;
   }) => Promise<{ ok: boolean; error?: string; email?: string }>;
@@ -858,6 +865,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     lastName,
     salonName,
     businessPhone,
+    streetLine,
+    city,
+    postalCode,
     activityCategory,
     email,
     password,
@@ -866,18 +876,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
     lastName: string;
     salonName: string;
     businessPhone: string;
-    activityCategory?: string;
+    streetLine: string;
+    city: string;
+    postalCode: string;
+    activityCategory: string;
     email: string;
     password: string;
   }) => {
     const normalizedEmail = normalizeAccountEmail(email);
     const normalizedPassword = password.trim();
+    const normalizedActivityCategory = activityCategory.trim().toUpperCase();
 
     if (
       !firstName.trim() ||
       !lastName.trim() ||
       !salonName.trim() ||
       !businessPhone.trim() ||
+      !streetLine.trim() ||
+      !city.trim() ||
+      !postalCode.trim() ||
+      !normalizedActivityCategory ||
       !normalizedEmail ||
       !normalizedPassword
     ) {
@@ -895,11 +913,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
       lastName: lastName.trim(),
       salonName: salonName.trim(),
       businessPhone: businessPhone.trim(),
-      activityCategory: activityCategory?.trim() ?? '',
+      streetLine: streetLine.trim().toUpperCase(),
+      city: city.trim().toUpperCase(),
+      postalCode: postalCode.trim(),
+      activityCategory: normalizedActivityCategory,
       email: normalizedEmail,
       password: normalizedPassword,
       createdAt: now,
     };
+
+    const formattedAddress = formatSalonAddress({
+      streetType: '',
+      streetName: streetLine.trim().toUpperCase(),
+      streetNumber: '',
+      city: city.trim().toUpperCase(),
+      postalCode: postalCode.trim(),
+      salonAddress: '',
+    });
 
     const nextAccounts = [nextAccount, ...accounts];
 
@@ -907,7 +937,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       {
         salonName: salonName.trim(),
         ownerEmail: normalizedEmail,
-        activityCategory: activityCategory?.trim() ?? '',
+        businessPhone: businessPhone.trim(),
+        activityCategory: normalizedActivityCategory,
+        streetType: '',
+        streetName: streetLine.trim().toUpperCase(),
+        streetNumber: '',
+        city: city.trim().toUpperCase(),
+        postalCode: postalCode.trim(),
+        salonAddress: formattedAddress,
         salonCode: buildSalonCode(salonName.trim(), normalizedEmail),
         createdAt: now,
         updatedAt: now,

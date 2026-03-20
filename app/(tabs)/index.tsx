@@ -1,13 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 import * as Haptics from 'expo-haptics';
 import * as ExpoLinking from 'expo-linking';
+import * as LocalAuthentication from 'expo-local-authentication';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Keyboard,
-  LayoutChangeEvent,
   ScrollView,
   Share,
   StyleSheet,
@@ -21,7 +23,7 @@ import { ModuleHeroHeader } from '../../components/module-hero-header';
 import { ClearableTextInput } from '../../components/ui/clearable-text-input';
 import { useAppContext } from '../../src/context/AppContext';
 import { salonNameFontOptions } from '../../src/lib/fonts';
-import { tApp } from '../../src/lib/i18n';
+import { getBiometricCopy, tApp } from '../../src/lib/i18n';
 import { formatSalonAddress, parseSalonAddress } from '../../src/lib/platform';
 import { useResponsiveLayout } from '../../src/lib/responsive';
 import { supabase } from '../../src/lib/supabase';
@@ -68,14 +70,25 @@ const formatMinutes = (value?: number) => {
   return hours > 0 ? `${hours}h` : `${minutes} min`;
 };
 
-const buildClientInviteMessage = (
-  brandName: string,
-  salonCode: string,
-  salonClientLink: string
-) =>
-  `Ciao! Prenota da ${brandName} usando questo link diretto:\n${salonClientLink}\n\nCodice salone: ${salonCode}`;
+const buildClientInviteMessage = ({
+  brandName,
+  salonCode,
+  salonClientLink,
+  isPublicWebEnabled,
+}: {
+  brandName: string;
+  salonCode: string;
+  salonClientLink: string;
+  isPublicWebEnabled: boolean;
+}) =>
+  isPublicWebEnabled
+    ? `Ciao! Prenota da ${brandName} aprendo questo link nel browser:\n${salonClientLink}\n\nCodice salone: ${salonCode}`
+    : `Ciao! Prenota da ${brandName} usando questo link diretto:\n${salonClientLink}\n\nCodice salone: ${salonCode}`;
 
 const toUppercaseField = (value: string) => value.toLocaleUpperCase('it-IT');
+const BIOMETRIC_PROMPT_SEEN_KEY = 'salon_manager_biometric_prompt_seen';
+const buildAccountScopedKey = (baseKey: string, accountEmail: string) =>
+  `${baseKey}__${accountEmail.trim().toLowerCase()}`;
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -88,6 +101,7 @@ export default function HomeScreen() {
   const cityFieldRef = useRef<TextInput | null>(null);
   const postalCodeFieldRef = useRef<TextInput | null>(null);
   const accountEmailFieldRef = useRef<TextInput | null>(null);
+  const biometricPromptShownRef = useRef(false);
 
   const {
     clienti,
@@ -98,6 +112,8 @@ export default function HomeScreen() {
     salonAccountEmail,
     salonWorkspace,
     setSalonWorkspace,
+    biometricEnabled,
+    setBiometricEnabled,
     switchSalonAccount,
     appLanguage,
   } = useAppContext();
@@ -128,10 +144,6 @@ export default function HomeScreen() {
   const [isEditingSalonProfile, setIsEditingSalonProfile] = useState(false);
   const [showProfileSection, setShowProfileSection] = useState(false);
   const [showFontPicker, setShowFontPicker] = useState(false);
-  const [profileSectionY, setProfileSectionY] = useState(0);
-  const [contactsSectionY, setContactsSectionY] = useState(0);
-  const [hasShownMandatoryProfilePrompt, setHasShownMandatoryProfilePrompt] = useState(false);
-  const [showMandatoryProfileOverlay, setShowMandatoryProfileOverlay] = useState(false);
 
   const oggi = getTodayDateString();
   const numeroClienti = clienti.length;
@@ -316,6 +328,7 @@ export default function HomeScreen() {
   const salvaDatiSalone = async () => {
     if (
       !salonNameInput.trim() ||
+      !activityCategoryInput.trim() ||
       !businessPhoneInput.trim() ||
       !streetLineInput.trim() ||
       !cityInput.trim() ||
@@ -323,7 +336,7 @@ export default function HomeScreen() {
     ) {
       Alert.alert(
         'Profilo salone incompleto',
-        'Compila nome salone, cellulare azienda, via e nome strada, comune e CAP prima di salvare.'
+        'Compila nome salone, categoria attività, cellulare azienda, via e nome strada, comune e CAP prima di salvare.'
       );
       return;
     }
@@ -505,6 +518,7 @@ export default function HomeScreen() {
 
   const profiloSaloneCompleto =
     salonNameInput.trim() !== '' &&
+    activityCategoryInput.trim() !== '' &&
     businessPhoneInput.trim() !== '' &&
     streetLineInput.trim() !== '' &&
     cityInput.trim() !== '' &&
@@ -521,6 +535,7 @@ export default function HomeScreen() {
   });
   const requiredFieldsFilled = [
     salonNameInput,
+    activityCategoryInput,
     businessPhoneInput,
     streetLineInput,
     cityInput,
@@ -531,16 +546,38 @@ export default function HomeScreen() {
     salonNameInput.trim() && salonNameInput !== 'Il tuo salone'
       ? toUppercaseField(salonNameInput)
       : 'SALON PRO';
+  const publicClientBaseUrl = useMemo(() => {
+    const extra = Constants.expoConfig?.extra as { publicClientBaseUrl?: string } | undefined;
+    return extra?.publicClientBaseUrl?.trim().replace(/\/+$/, '') ?? '';
+  }, []);
+  const hasPublicClientWeb =
+    publicClientBaseUrl.startsWith('http://') || publicClientBaseUrl.startsWith('https://');
+  const salonClientJoinPath = useMemo(
+    () => `/join/${salonWorkspace.salonCode}`,
+    [salonWorkspace.salonCode]
+  );
 
-  const canEditSalonProfile = isEditingSalonProfile || !profiloSaloneCompleto;
+  const canEditSalonProfile = isEditingSalonProfile;
+
+  const salonClientDeepLink = useMemo(
+    () => ExpoLinking.createURL(salonClientJoinPath),
+    [salonClientJoinPath]
+  );
 
   const salonClientLink = useMemo(
     () =>
-      ExpoLinking.createURL('/cliente', {
-        queryParams: { salon: salonWorkspace.salonCode },
-      }),
-    [salonWorkspace.salonCode]
+      hasPublicClientWeb
+        ? `${publicClientBaseUrl}${salonClientJoinPath}`
+        : salonClientDeepLink,
+    [hasPublicClientWeb, publicClientBaseUrl, salonClientDeepLink, salonClientJoinPath]
   );
+
+  const openFrontendPreviewForAdmin = useCallback(() => {
+    router.push({
+      pathname: '/cliente',
+      params: { salon: salonWorkspace.salonCode },
+    });
+  }, [router, salonWorkspace.salonCode]);
 
   useEffect(() => {
     const init = async () => {
@@ -550,53 +587,129 @@ export default function HomeScreen() {
     init();
   }, [caricaSaloneDaSupabase]);
 
-  useEffect(() => {
-    if (!profiloSaloneCompleto) {
-      setIsEditingSalonProfile(true);
-      setShowProfileSection(true);
+  const markBiometricPromptAsSeen = useCallback(async () => {
+    if (!salonAccountEmail) return;
+
+    try {
+      await AsyncStorage.setItem(
+        buildAccountScopedKey(BIOMETRIC_PROMPT_SEEN_KEY, salonAccountEmail),
+        'true'
+      );
+    } catch {
+      // Ignore prompt persistence issues and keep biometric management available in settings.
     }
-  }, [profiloSaloneCompleto]);
+  }, [salonAccountEmail]);
 
-  useEffect(() => {
-    if (!profiloSaloneCompleto && profileSectionY > 0) {
-      setShowProfileSection(true);
-      scrollRef.current?.scrollTo({ y: Math.max(profileSectionY - 18, 0), animated: true });
+  const enableBiometricFromPrompt = useCallback(async () => {
+    await markBiometricPromptAsSeen();
 
-      if (!hasShownMandatoryProfilePrompt) {
-        setHasShownMandatoryProfilePrompt(true);
-        setShowMandatoryProfileOverlay(true);
-      }
-    }
-  }, [hasShownMandatoryProfilePrompt, profileSectionY, profiloSaloneCompleto]);
-
-  useEffect(() => {
-    if (profiloSaloneCompleto) {
-      setShowMandatoryProfileOverlay(false);
-    }
-  }, [profiloSaloneCompleto]);
-
-  const handleProfileSectionLayout = (event: LayoutChangeEvent) => {
-    setProfileSectionY(event.nativeEvent.layout.y);
-  };
-
-  const handleContactsSectionLayout = (event: LayoutChangeEvent) => {
-    setContactsSectionY(event.nativeEvent.layout.y);
-  };
-
-  const focusMandatoryProfile = useCallback(() => {
-    setShowProfileSection(true);
-    setShowMandatoryProfileOverlay(false);
-    const targetY = Math.max((contactsSectionY || profileSectionY) - 110, 0);
-
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        scrollRef.current?.scrollTo({ y: targetY, animated: true });
-        setTimeout(() => {
-          scrollRef.current?.scrollTo({ y: targetY, animated: true });
-        }, 280);
-      });
+    const biometricCopy = getBiometricCopy(
+      appLanguage,
+      process.env.EXPO_OS === 'ios' ? 'ios' : 'generic'
+    );
+    const result = await LocalAuthentication.authenticateAsync({
+      promptMessage: biometricCopy.promptEnable,
+      cancelLabel: tApp(appLanguage, 'common_cancel'),
+      fallbackLabel: 'Usa password',
+      disableDeviceFallback: false,
     });
-  }, [contactsSectionY, profileSectionY]);
+
+    if (!result.success) {
+      router.push('/impostazioni');
+      return;
+    }
+
+    setBiometricEnabled(true);
+    Alert.alert(
+      tApp(appLanguage, 'settings_biometric_enabled_title'),
+      tApp(appLanguage, 'settings_biometric_enabled_body', {
+        biometricLabel: biometricCopy.label,
+      })
+    );
+  }, [appLanguage, markBiometricPromptAsSeen, router, setBiometricEnabled]);
+
+  useEffect(() => {
+    biometricPromptShownRef.current = false;
+  }, [salonAccountEmail]);
+
+  useEffect(() => {
+    if (loadingSalon || !salonAccountEmail || biometricEnabled || biometricPromptShownRef.current) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const maybePromptBiometric = async () => {
+      const promptKey = buildAccountScopedKey(BIOMETRIC_PROMPT_SEEN_KEY, salonAccountEmail);
+
+      try {
+        const hasSeenPrompt = await AsyncStorage.getItem(promptKey);
+
+        if (hasSeenPrompt === 'true' || cancelled) return;
+
+        const hasHardware = await LocalAuthentication.hasHardwareAsync();
+        const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+        const supportedTypes = await LocalAuthentication.supportedAuthenticationTypesAsync();
+
+        if (!hasHardware || !isEnrolled || supportedTypes.length === 0 || cancelled) {
+          await AsyncStorage.setItem(promptKey, 'true');
+          return;
+        }
+
+        const biometricCopy = getBiometricCopy(
+          appLanguage,
+          process.env.EXPO_OS === 'ios' ? 'ios' : 'generic'
+        );
+
+        biometricPromptShownRef.current = true;
+
+        Alert.alert(
+          tApp(appLanguage, 'settings_biometric_title'),
+          tApp(appLanguage, 'home_biometric_prompt_body', {
+            biometricLabel: biometricCopy.label,
+          }),
+          [
+            {
+              text: tApp(appLanguage, 'common_no'),
+              style: 'cancel',
+              onPress: () => {
+                void markBiometricPromptAsSeen();
+              },
+            },
+            {
+              text: tApp(appLanguage, 'settings_title'),
+              onPress: () => {
+                void markBiometricPromptAsSeen();
+                router.push('/impostazioni');
+              },
+            },
+            {
+              text: biometricCopy.action,
+              onPress: () => {
+                void enableBiometricFromPrompt();
+              },
+            },
+          ]
+        );
+      } catch {
+        biometricPromptShownRef.current = true;
+      }
+    };
+
+    void maybePromptBiometric();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    appLanguage,
+    biometricEnabled,
+    enableBiometricFromPrompt,
+    loadingSalon,
+    markBiometricPromptAsSeen,
+    router,
+    salonAccountEmail,
+  ]);
 
   useFocusEffect(
     useCallback(() => {
@@ -612,7 +725,12 @@ export default function HomeScreen() {
     try {
       await Share.share({
         title: `Prenota da ${brandName}`,
-        message: buildClientInviteMessage(brandName, salonWorkspace.salonCode, salonClientLink),
+        message: buildClientInviteMessage({
+          brandName,
+          salonCode: salonWorkspace.salonCode,
+          salonClientLink,
+          isPublicWebEnabled: hasPublicClientWeb,
+        }),
       });
     } catch (error) {
       Alert.alert(
@@ -657,7 +775,6 @@ export default function HomeScreen() {
             salonName={salonNameInput || salonWorkspace.salonName}
             salonNameDisplayStyle={salonNameDisplayStyleInput}
             salonNameFontVariant={salonNameFontVariantInput}
-            iconOffsetY={-8}
             onTitleLongPress={() => setShowAdminPanel((current) => !current)}
             rightAccessory={
               <TouchableOpacity
@@ -701,14 +818,14 @@ export default function HomeScreen() {
           <View style={styles.heroMetricsRow}>
             <View style={styles.heroMetricCardBlue}>
               <Text style={styles.heroMetricNumber}>{appuntamentiOggi.length}</Text>
-              <Text style={styles.heroMetricLabel}>
+              <Text style={styles.heroMetricLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.68}>
                 {tApp(appLanguage, 'home_appointments_today')}
               </Text>
             </View>
 
             <View style={styles.heroMetricCardRose}>
               <Text style={styles.heroMetricNumber}>€ {valoreDaIncassare.toFixed(0)}</Text>
-              <Text style={styles.heroMetricLabel}>{tApp(appLanguage, 'home_to_collect')}</Text>
+              <Text style={styles.heroMetricLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.68}>{tApp(appLanguage, 'home_to_collect')}</Text>
             </View>
           </View>
 
@@ -723,9 +840,9 @@ export default function HomeScreen() {
               responsive.isDesktop && styles.desktopThirdCard,
             ]}
           >
-            <Text style={styles.insightTitle}>{tApp(appLanguage, 'tab_clients')}</Text>
+            <Text style={styles.insightTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{tApp(appLanguage, 'tab_clients')}</Text>
             <Text style={styles.insightNumber}>{numeroClienti}</Text>
-            <Text style={styles.insightHint}>
+            <Text style={styles.insightHint} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.64}>
               {ultimoCliente
                 ? `Ultimo: ${ultimoCliente.nome}`
                 : tApp(appLanguage, 'home_no_customer')}
@@ -739,9 +856,9 @@ export default function HomeScreen() {
               responsive.isDesktop && styles.desktopThirdCard,
             ]}
           >
-            <Text style={styles.insightTitle}>{tApp(appLanguage, 'home_total_income')}</Text>
+            <Text style={styles.insightTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{tApp(appLanguage, 'home_total_income')}</Text>
             <Text style={styles.insightNumber}>€ {incassoTotale.toFixed(0)}</Text>
-            <Text style={styles.insightHint}>
+            <Text style={styles.insightHint} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.64}>
               {tApp(appLanguage, 'home_registered_movements')}
             </Text>
           </View>
@@ -763,19 +880,19 @@ export default function HomeScreen() {
 
         <View style={styles.sectionRow}>
           <View style={[styles.infoCardSun, responsive.isTablet && styles.infoCardResponsive]}>
-            <Text style={styles.infoLabel}>{tApp(appLanguage, 'home_collected')}</Text>
+            <Text style={styles.infoLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.58}>{tApp(appLanguage, 'home_collected')}</Text>
             <Text style={styles.infoValue}>{appuntamentiIncassati}</Text>
           </View>
 
           <View
             style={[styles.infoCardLavender, responsive.isTablet && styles.infoCardResponsive]}
           >
-            <Text style={styles.infoLabel}>{tApp(appLanguage, 'home_bookings')}</Text>
+            <Text style={styles.infoLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.58}>{tApp(appLanguage, 'home_bookings')}</Text>
             <Text style={styles.infoValue}>{numeroAppuntamenti}</Text>
           </View>
 
           <View style={[styles.infoCardPeach, responsive.isTablet && styles.infoCardResponsive]}>
-            <Text style={styles.infoLabel}>{tApp(appLanguage, 'home_to_collect')}</Text>
+            <Text style={styles.infoLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.58}>{tApp(appLanguage, 'home_to_collect')}</Text>
             <Text style={styles.infoValue}>{appuntamentiDaIncassare}</Text>
           </View>
         </View>
@@ -829,34 +946,17 @@ export default function HomeScreen() {
         <View
           style={[
             styles.sectionCard,
-            !profiloSaloneCompleto && styles.sectionCardMandatory,
             responsive.isDesktop && styles.desktopWideCard,
           ]}
-          onLayout={handleProfileSectionLayout}
         >
-          {!profiloSaloneCompleto ? (
-            <View style={styles.mandatoryIntroCard}>
-              <View style={styles.mandatoryIntroGlow} />
-              <View style={styles.mandatoryIntroBadge}>
-                <Ionicons name="sparkles" size={18} color="#ffffff" />
-              </View>
-              <Text style={styles.mandatoryIntroEyebrow}>Primo accesso</Text>
-              <Text style={styles.mandatoryIntroTitle}>Completa registrazione salone</Text>
-              <Text style={styles.mandatoryIntroText}>
-                Inserisci i dati base del salone per sbloccare tutta l&apos;app e renderla pronta
-                per clienti, agenda e frontend.
-              </Text>
-            </View>
-          ) : null}
-
           <TouchableOpacity
             style={styles.profileAccordionButton}
             onPress={() => {
-              if (!profiloSaloneCompleto) {
-                setShowProfileSection(true);
-                return;
-              }
-              setShowProfileSection((current) => !current);
+              setShowProfileSection((current) => {
+                const nextValue = !current;
+                setIsEditingSalonProfile(nextValue);
+                return nextValue;
+              });
             }}
             activeOpacity={0.9}
           >
@@ -868,9 +968,7 @@ export default function HomeScreen() {
                   styles.profileAccordionTitle,
                 ]}
               >
-                {profiloSaloneCompleto
-                  ? tApp(appLanguage, 'home_profile_title')
-                  : tApp(appLanguage, 'home_complete_profile')}
+                {tApp(appLanguage, 'home_edit_profile')}
               </Text>
               <Text
                 style={[
@@ -879,9 +977,7 @@ export default function HomeScreen() {
                   styles.profileAccordionSubtext,
                 ]}
               >
-                {profiloSaloneCompleto
-                  ? 'Tocca per aprire o chiudere il profilo del salone.'
-                  : 'Compilazione obbligatoria al primo accesso.'}
+                {'Qui trovi i dati del salone salvati in registrazione. Puoi aprire il blocco e modificarli quando vuoi.'}
               </Text>
             </View>
             <View style={styles.profileAccordionIconWrap}>
@@ -893,206 +989,221 @@ export default function HomeScreen() {
             </View>
           </TouchableOpacity>
 
+          <View style={styles.profilePreviewCard}>
+            <View style={styles.profilePreviewHeader}>
+              <Text style={styles.profilePreviewEyebrow}>Profilo salone</Text>
+              <Text style={styles.profilePreviewProgress}>
+                {profiloSaloneCompleto
+                  ? 'Contatti e indirizzo salvati'
+                  : `${requiredFieldsFilled}/6 campi obbligatori`}
+              </Text>
+            </View>
+            <Text
+              style={[
+                styles.profilePreviewName,
+                salonNameDisplayStyleInput === 'minuscolo' && styles.profilePreviewNameLower,
+                salonNameDisplayStyleInput === 'stampatello' && styles.profilePreviewNameUpper,
+                {
+                  fontFamily: salonNameFontOptions.find(
+                    (item) => item.key === salonNameFontVariantInput
+                  )?.family,
+                },
+              ]}
+            >
+              {salonPreviewName}
+            </Text>
+            <Text style={styles.profilePreviewMeta}>
+              {activityCategoryInput.trim() || 'Categoria libera'}
+            </Text>
+            <View style={styles.profilePreviewInfoRow}>
+              <View style={styles.profilePreviewInfoPill}>
+                <Ionicons name="call-outline" size={14} color="#475569" />
+                <Text style={styles.profilePreviewInfoText}>
+                  {businessPhoneInput.trim() || 'Telefono'}
+                </Text>
+              </View>
+              <View style={styles.profilePreviewInfoPill}>
+                <Ionicons name="location-outline" size={14} color="#475569" />
+                <Text style={styles.profilePreviewInfoText} numberOfLines={1}>
+                  {salonPreviewAddress || 'Indirizzo salone'}
+                </Text>
+              </View>
+            </View>
+          </View>
+
           {showProfileSection ? (
             <>
-              <View style={styles.profileEditorWrap}>
-                <View style={styles.profilePreviewCard}>
-                  <View style={styles.profilePreviewHeader}>
-                    <Text style={styles.profilePreviewEyebrow}>Anteprima insegna</Text>
-                    <Text style={styles.profilePreviewProgress}>
-                      {requiredFieldsFilled}/6 campi obbligatori
+              <View style={styles.profileEditorCard}>
+                <Text style={styles.profileEditorTitle}>Dati salone</Text>
+                <Text style={styles.profileEditorCaption}>
+                  Registrazione e Home usano gli stessi dati. Qui li puoi rivedere e correggere in un unico blocco.
+                </Text>
+
+                <View style={styles.profileSectionDivider} />
+
+                <Text style={styles.profileSectionTitle}>Identita salone</Text>
+                <Text style={styles.profileSectionCaption}>
+                  Nome pubblico e categoria con cui il salone viene mostrato nell&apos;app.
+                </Text>
+
+                <Text style={styles.fieldLabel}>Nome salone</Text>
+                <ClearableTextInput
+                  ref={salonNameFieldRef}
+                  style={[styles.accountInput, !canEditSalonProfile && styles.accountInputLocked]}
+                  value={salonNameInput}
+                  onChangeText={setSalonNameInput}
+                  placeholder={tApp(appLanguage, 'auth_salon_name_placeholder')}
+                  placeholderTextColor="#8f8f8f"
+                  editable={canEditSalonProfile}
+                  autoCapitalize="words"
+                  returnKeyType="next"
+                  onSubmitEditing={() => activityCategoryFieldRef.current?.focus()}
+                  blurOnSubmit={false}
+                />
+
+                <Text style={styles.fieldLabel}>Categoria attivita</Text>
+                <ClearableTextInput
+                  ref={activityCategoryFieldRef}
+                  style={[styles.accountInput, !canEditSalonProfile && styles.accountInputLocked]}
+                  value={activityCategoryInput}
+                  onChangeText={(value) => setActivityCategoryInput(toUppercaseField(value))}
+                  placeholder="Categoria attivita"
+                  placeholderTextColor="#8f8f8f"
+                  editable={canEditSalonProfile}
+                  autoCapitalize="characters"
+                  returnKeyType="next"
+                  onSubmitEditing={() => businessPhoneFieldRef.current?.focus()}
+                  blurOnSubmit={false}
+                />
+
+                <View style={styles.profileSectionDivider} />
+
+                <Text style={styles.profileSectionTitle}>Contatti e indirizzo</Text>
+                <Text style={styles.profileSectionCaption}>
+                  Questi campi sono obbligatori e vengono usati per attivare correttamente il salone.
+                </Text>
+
+                <Text style={styles.fieldLabel}>Cellulare azienda</Text>
+                <ClearableTextInput
+                  ref={businessPhoneFieldRef}
+                  style={[styles.accountInput, !canEditSalonProfile && styles.accountInputLocked]}
+                  value={businessPhoneInput}
+                  onChangeText={setBusinessPhoneInput}
+                  placeholder={tApp(appLanguage, 'auth_business_phone_placeholder')}
+                  keyboardType="phone-pad"
+                  placeholderTextColor="#8f8f8f"
+                  editable={canEditSalonProfile}
+                  returnKeyType="next"
+                  onSubmitEditing={() => streetLineFieldRef.current?.focus()}
+                  blurOnSubmit={false}
+                />
+
+                <Text style={styles.fieldLabel}>Via, nome strada e civico</Text>
+                <ClearableTextInput
+                  ref={streetLineFieldRef}
+                  style={[styles.accountInput, !canEditSalonProfile && styles.accountInputLocked]}
+                  value={streetLineInput}
+                  onChangeText={(value) => setStreetLineInput(toUppercaseField(value))}
+                  placeholder="Via Roma 1"
+                  placeholderTextColor="#8f8f8f"
+                  editable={canEditSalonProfile}
+                  autoCapitalize="characters"
+                  returnKeyType="next"
+                  onSubmitEditing={() => cityFieldRef.current?.focus()}
+                  blurOnSubmit={false}
+                />
+
+                <View style={styles.formRow}>
+                  <View style={styles.formColumn}>
+                    <Text style={styles.fieldLabel}>{tApp(appLanguage, 'common_city')}</Text>
+                    <ClearableTextInput
+                      ref={cityFieldRef}
+                      style={[
+                        styles.accountInput,
+                        !canEditSalonProfile && styles.accountInputLocked,
+                      ]}
+                      value={cityInput}
+                      onChangeText={(value) => setCityInput(toUppercaseField(value))}
+                      placeholder={tApp(appLanguage, 'common_city')}
+                      placeholderTextColor="#8f8f8f"
+                      editable={canEditSalonProfile}
+                      autoCapitalize="characters"
+                      returnKeyType="next"
+                      onSubmitEditing={() => postalCodeFieldRef.current?.focus()}
+                      blurOnSubmit={false}
+                    />
+                  </View>
+
+                  <View style={[styles.formColumn, styles.formColumnCompact]}>
+                    <Text style={styles.fieldLabel}>{tApp(appLanguage, 'common_postal_code')}</Text>
+                    <ClearableTextInput
+                      ref={postalCodeFieldRef}
+                      style={[
+                        styles.accountInput,
+                        !canEditSalonProfile && styles.accountInputLocked,
+                      ]}
+                      value={postalCodeInput}
+                      onChangeText={setPostalCodeInput}
+                      placeholder={tApp(appLanguage, 'common_postal_code')}
+                      keyboardType="number-pad"
+                      placeholderTextColor="#8f8f8f"
+                      editable={canEditSalonProfile}
+                      returnKeyType="done"
+                      onSubmitEditing={Keyboard.dismiss}
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.profileSectionDivider} />
+
+                <TouchableOpacity
+                  style={styles.fontDropdownButton}
+                  onPress={() => setShowFontPicker((current) => !current)}
+                  activeOpacity={0.9}
+                >
+                  <View style={styles.fontDropdownTextWrap}>
+                    <Text style={styles.profileSectionTitle}>Aspetto insegna</Text>
+                    <Text style={styles.profileSectionCaption}>
+                      Font attuale: {salonNameFontOptions.find((item) => item.key === salonNameFontVariantInput)?.label}
                     </Text>
                   </View>
-                  <Text
-                    style={[
-                      styles.profilePreviewName,
-                      salonNameDisplayStyleInput === 'minuscolo' && styles.profilePreviewNameLower,
-                      salonNameDisplayStyleInput === 'stampatello' &&
-                        styles.profilePreviewNameUpper,
-                      { fontFamily: salonNameFontOptions.find((item) => item.key === salonNameFontVariantInput)?.family },
-                    ]}
-                  >
-                    {salonPreviewName}
-                  </Text>
-                  <Text style={styles.profilePreviewMeta}>
-                    {activityCategoryInput.trim() || 'Categoria libera'}
-                  </Text>
-                  <View style={styles.profilePreviewInfoRow}>
-                    <View style={styles.profilePreviewInfoPill}>
-                      <Ionicons name="call-outline" size={14} color="#475569" />
-                      <Text style={styles.profilePreviewInfoText}>
-                        {businessPhoneInput.trim() || 'Telefono'}
-                      </Text>
-                    </View>
-                    <View style={styles.profilePreviewInfoPill}>
-                      <Ionicons name="location-outline" size={14} color="#475569" />
-                      <Text style={styles.profilePreviewInfoText} numberOfLines={1}>
-                        {salonPreviewAddress || 'Indirizzo salone'}
-                      </Text>
-                    </View>
+                  <View style={styles.profileAccordionIconWrap}>
+                    <Ionicons
+                      name={showFontPicker ? 'chevron-up' : 'chevron-down'}
+                      size={24}
+                      color="#334155"
+                    />
                   </View>
-                </View>
+                </TouchableOpacity>
 
-                <View style={styles.formGroupCard}>
-                  <TouchableOpacity
-                    style={styles.fontDropdownButton}
-                    onPress={() => setShowFontPicker((current) => !current)}
-                    activeOpacity={0.9}
-                  >
-                    <View style={styles.fontDropdownTextWrap}>
-                      <Text style={styles.formGroupTitle}>Font insegna</Text>
-                      <Text style={styles.formGroupCaption}>
-                        Font attuale: {salonNameFontOptions.find((item) => item.key === salonNameFontVariantInput)?.label}
-                      </Text>
-                    </View>
-                    <View style={styles.profileAccordionIconWrap}>
-                      <Ionicons
-                        name={showFontPicker ? 'chevron-up' : 'chevron-down'}
-                        size={24}
-                        color="#334155"
-                      />
-                    </View>
-                  </TouchableOpacity>
-
-                  {showFontPicker ? (
-                    <View style={styles.profileFontSelectorGrid}>
-                      {salonNameFontOptions.map((option) => (
-                        <TouchableOpacity
-                          key={option.key}
-                          style={[
-                            styles.profileFontChip,
-                            salonNameFontVariantInput === option.key &&
-                              styles.profileFontChipActive,
-                          ]}
-                          onPress={() => setSalonNameFontVariantInput(option.key)}
-                          activeOpacity={0.9}
-                          disabled={!canEditSalonProfile}
-                        >
-                          <Text
-                            style={[
-                              styles.profileFontChipText,
-                              { fontFamily: option.family },
-                              salonNameFontVariantInput === option.key &&
-                                styles.profileFontChipTextActive,
-                            ]}
-                          >
-                            {option.label}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  ) : null}
-                </View>
-
-                <View style={styles.formGroupCard}>
-                  <Text style={styles.formGroupTitle}>Identita salone</Text>
-                  <Text style={styles.formGroupCaption}>
-                    Imposta nome pubblico e categoria dell&apos;attivita.
-                  </Text>
-
-                  <Text style={styles.fieldLabel}>Nome salone</Text>
-                  <ClearableTextInput
-                    ref={salonNameFieldRef}
-                    style={[styles.accountInput, !canEditSalonProfile && styles.accountInputLocked]}
-                    value={salonNameInput}
-                    onChangeText={setSalonNameInput}
-                    placeholder={tApp(appLanguage, 'auth_salon_name_placeholder')}
-                    placeholderTextColor="#8f8f8f"
-                    editable={canEditSalonProfile}
-                    autoCapitalize="words"
-                    returnKeyType="next"
-                    onSubmitEditing={() => activityCategoryFieldRef.current?.focus()}
-                    blurOnSubmit={false}
-                  />
-
-                  <Text style={styles.fieldLabel}>Categoria attivita</Text>
-                  <ClearableTextInput
-                    ref={activityCategoryFieldRef}
-                    style={[styles.accountInput, !canEditSalonProfile && styles.accountInputLocked]}
-                    value={activityCategoryInput}
-                    onChangeText={(value) => setActivityCategoryInput(toUppercaseField(value))}
-                    placeholder="Categoria attivita (opzionale)"
-                    placeholderTextColor="#8f8f8f"
-                    editable={canEditSalonProfile}
-                    autoCapitalize="characters"
-                    returnKeyType="next"
-                    onSubmitEditing={() => businessPhoneFieldRef.current?.focus()}
-                    blurOnSubmit={false}
-                  />
-                </View>
-
-                <View style={styles.formGroupCard} onLayout={handleContactsSectionLayout}>
-                  <Text style={styles.formGroupTitle}>Contatti e indirizzo</Text>
-                  <Text style={styles.formGroupCaption}>
-                    Questi dati servono per attivare correttamente il salone.
-                  </Text>
-
-                  <Text style={styles.fieldLabel}>Cellulare azienda</Text>
-                  <ClearableTextInput
-                    ref={businessPhoneFieldRef}
-                    style={[styles.accountInput, !canEditSalonProfile && styles.accountInputLocked]}
-                    value={businessPhoneInput}
-                    onChangeText={setBusinessPhoneInput}
-                    placeholder={tApp(appLanguage, 'auth_business_phone_placeholder')}
-                    keyboardType="phone-pad"
-                    placeholderTextColor="#8f8f8f"
-                    editable={canEditSalonProfile}
-                    returnKeyType="next"
-                    onSubmitEditing={() => streetLineFieldRef.current?.focus()}
-                    blurOnSubmit={false}
-                  />
-
-                  <Text style={styles.fieldLabel}>Via, nome strada e civico</Text>
-                  <ClearableTextInput
-                    ref={streetLineFieldRef}
-                    style={[styles.accountInput, !canEditSalonProfile && styles.accountInputLocked]}
-                    value={streetLineInput}
-                    onChangeText={(value) => setStreetLineInput(toUppercaseField(value))}
-                    placeholder="Via Roma 1"
-                    placeholderTextColor="#8f8f8f"
-                    editable={canEditSalonProfile}
-                    autoCapitalize="characters"
-                    returnKeyType="next"
-                    onSubmitEditing={() => cityFieldRef.current?.focus()}
-                    blurOnSubmit={false}
-                  />
-
-                  <View style={styles.formRow}>
-                    <View style={styles.formColumn}>
-                      <Text style={styles.fieldLabel}>{tApp(appLanguage, 'common_city')}</Text>
-                      <ClearableTextInput
-                        ref={cityFieldRef}
+                {showFontPicker ? (
+                  <View style={styles.profileFontSelectorGrid}>
+                    {salonNameFontOptions.map((option) => (
+                      <TouchableOpacity
+                        key={option.key}
                         style={[
-                          styles.accountInput,
-                          !canEditSalonProfile && styles.accountInputLocked,
+                          styles.profileFontChip,
+                          salonNameFontVariantInput === option.key &&
+                            styles.profileFontChipActive,
                         ]}
-                        value={cityInput}
-                        onChangeText={(value) => setCityInput(toUppercaseField(value))}
-                        placeholder={tApp(appLanguage, 'common_city')}
-                        placeholderTextColor="#8f8f8f"
-                        editable={canEditSalonProfile}
-                        autoCapitalize="characters"
-                        returnKeyType="next"
-                        onSubmitEditing={() => postalCodeFieldRef.current?.focus()}
-                        blurOnSubmit={false}
-                      />
-                    </View>
+                        onPress={() => setSalonNameFontVariantInput(option.key)}
+                        activeOpacity={0.9}
+                        disabled={!canEditSalonProfile}
+                      >
+                        <Text
+                          style={[
+                            styles.profileFontChipText,
+                            { fontFamily: option.family },
+                            salonNameFontVariantInput === option.key &&
+                              styles.profileFontChipTextActive,
+                          ]}
+                        >
+                          {option.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
                   </View>
-
-                  <Text style={styles.fieldLabel}>{tApp(appLanguage, 'common_postal_code')}</Text>
-                  <ClearableTextInput
-                    ref={postalCodeFieldRef}
-                    style={[styles.accountInput, !canEditSalonProfile && styles.accountInputLocked]}
-                    value={postalCodeInput}
-                    onChangeText={setPostalCodeInput}
-                    placeholder={tApp(appLanguage, 'common_postal_code')}
-                    keyboardType="number-pad"
-                    placeholderTextColor="#8f8f8f"
-                    editable={canEditSalonProfile}
-                    returnKeyType="done"
-                    onSubmitEditing={Keyboard.dismiss}
-                  />
-                </View>
+                ) : null}
               </View>
 
               <TouchableOpacity
@@ -1104,9 +1215,7 @@ export default function HomeScreen() {
                 <Text style={styles.previewButtonText}>
                   {savingSalon
                     ? 'Salvataggio...'
-                    : profiloSaloneCompleto
-                      ? tApp(appLanguage, 'home_save_profile')
-                      : tApp(appLanguage, 'home_complete_profile_button')}
+                    : tApp(appLanguage, 'home_save_profile')}
                 </Text>
               </TouchableOpacity>
             </>
@@ -1154,6 +1263,14 @@ export default function HomeScreen() {
               activeOpacity={0.9}
             >
               <Text style={styles.previewButtonText}>Salva account attivo</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.previewButton}
+              onPress={openFrontendPreviewForAdmin}
+              activeOpacity={0.9}
+            >
+              <Text style={styles.previewButtonText}>Anteprima frontend cliente (admin)</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -1228,12 +1345,23 @@ export default function HomeScreen() {
         <View style={[styles.sectionCard, responsive.isDesktop && styles.desktopWideCard]}>
           <Text style={[styles.sectionTitle, styles.sectionTitleCentered]}>Accesso cliente</Text>
           <Text style={[styles.sectionSubtext, styles.sectionSubtextCentered]}>
-            Questo codice collega il frontend cliente direttamente a questo salone. Puoi condividere
-            il link oppure far inserire il codice manualmente.
+            Questo codice collega il frontend cliente direttamente a questo salone. Condividi il link
+            oppure fai scansionare il QR al cliente.
           </Text>
 
+          {!hasPublicClientWeb ? (
+            <View style={styles.accessWarningCard}>
+              <Text style={styles.accessWarningTitle}>Frontend web cliente non ancora configurato</Text>
+              <Text style={styles.accessWarningText}>
+                Per far entrare i clienti reali dal browser imposta publicClientBaseUrl in app.json con
+                l'URL pubblico del frontend web. Finché resta vuoto, QR e link continueranno ad aprire
+                l'app.
+              </Text>
+            </View>
+          ) : null}
+
           <View style={styles.accessCard}>
-            <Text style={styles.accessLabel}>Codice salone</Text>
+            <Text style={styles.accessLabel}>{hasPublicClientWeb ? 'Link web cliente' : 'Codice salone'}</Text>
             <Text style={styles.accessCode}>{salonWorkspace.salonCode}</Text>
             <Text style={styles.accessLink} numberOfLines={2}>
               {salonClientLink}
@@ -1244,22 +1372,11 @@ export default function HomeScreen() {
             <QRCode value={salonClientLink} size={170} color="#111111" backgroundColor="#ffffff" />
             <Text style={styles.qrTitle}>QR cliente del salone</Text>
             <Text style={styles.qrText}>
-              Questo QR è fisso: il cliente lo scansiona e si apre direttamente nel tuo salone.
+              {hasPublicClientWeb
+                ? 'Questo QR apre il frontend web cliente già collegato al tuo salone.'
+                : 'Questo QR è collegato al tuo salone, ma finché il link web non è configurato aprirà l\'app.'}
             </Text>
           </View>
-
-          <TouchableOpacity
-            style={styles.previewButton}
-            onPress={() =>
-              router.push({
-                pathname: '/cliente',
-                params: { salon: salonWorkspace.salonCode },
-              })
-            }
-            activeOpacity={0.9}
-          >
-            <Text style={styles.previewButtonText}>Apri frontend cliente del salone</Text>
-          </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.resetButton}
@@ -1273,21 +1390,8 @@ export default function HomeScreen() {
         <View style={[styles.sectionCard, responsive.isDesktop && styles.desktopWideCard]}>
           <Text style={[styles.sectionTitle, styles.sectionTitleCentered]}>Strumenti</Text>
           <Text style={[styles.sectionSubtext, styles.sectionSubtextCentered]}>
-            Qui puoi aprire l’anteprima cliente oppure ripartire dai dati demo.
+            Qui trovi solo strumenti interni del salone. L'anteprima cliente resta disponibile nel pannello admin nascosto.
           </Text>
-
-          <TouchableOpacity
-            style={styles.previewButton}
-            onPress={() =>
-              router.push({
-                pathname: '/cliente',
-                params: { salon: salonWorkspace.salonCode },
-              })
-            }
-            activeOpacity={0.9}
-          >
-            <Text style={styles.previewButtonText}>Apri frontend cliente</Text>
-          </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.resetButton}
@@ -1300,30 +1404,6 @@ export default function HomeScreen() {
         </View>
       </ScrollView>
 
-      {showMandatoryProfileOverlay ? (
-        <View style={styles.mandatoryOverlay}>
-          <View style={styles.mandatoryOverlayCard}>
-            <View style={styles.mandatoryOverlayAccent} />
-            <View style={styles.mandatoryOverlayBadge}>
-              <Ionicons name="sparkles" size={20} color="#ffffff" />
-            </View>
-            <Text style={styles.mandatoryOverlayEyebrow}>Onboarding salone</Text>
-            <Text style={styles.mandatoryOverlayTitle}>Profilo salone obbligatorio</Text>
-            <Text style={styles.mandatoryOverlayText}>
-              Al primo accesso devi completare il profilo del salone prima di continuare a usare
-              l&apos;app.
-            </Text>
-
-            <TouchableOpacity
-              style={styles.mandatoryOverlayButton}
-              onPress={focusMandatoryProfile}
-              activeOpacity={0.9}
-            >
-              <Text style={styles.mandatoryOverlayButtonText}>Compila ora</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -1792,6 +1872,46 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  profileEditorCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: '#e7edf4',
+    paddingHorizontal: 16,
+    paddingVertical: 18,
+  },
+  profileEditorTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#0f172a',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  profileEditorCaption: {
+    fontSize: 13,
+    lineHeight: 20,
+    color: '#64748b',
+    textAlign: 'center',
+    marginBottom: 14,
+  },
+  profileSectionDivider: {
+    height: 1,
+    backgroundColor: '#e7edf4',
+    marginVertical: 16,
+  },
+  profileSectionTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#0f172a',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  profileSectionCaption: {
+    fontSize: 13,
+    lineHeight: 20,
+    color: '#64748b',
+    textAlign: 'center',
+  },
   profileEditorWrap: {
     gap: 14,
   },
@@ -1989,6 +2109,29 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '900',
     color: '#ffffff',
+    textAlign: 'center',
+  },
+  accessWarningCard: {
+    backgroundColor: '#fff7ed',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#fdba74',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 12,
+  },
+  accessWarningTitle: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#9a3412',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  accessWarningText: {
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '700',
+    color: '#9a3412',
     textAlign: 'center',
   },
   resetButton: {

@@ -435,24 +435,24 @@ export default function CassaScreen() {
               <View style={styles.heroStatsRow}>
                 <View style={styles.heroStatCardMint}>
                   <Text style={styles.heroStatNumber}>€ {totale.toFixed(0)}</Text>
-                  <Text style={styles.heroStatLabel}>{tApp(appLanguage, 'cash_total_income')}</Text>
+                  <Text style={styles.heroStatLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.68}>{tApp(appLanguage, 'cash_total_income')}</Text>
                 </View>
 
                 <View style={styles.heroStatCardBlue}>
                   <Text style={styles.heroStatNumber}>€ {incassoCarta.toFixed(0)}</Text>
-                  <Text style={styles.heroStatLabel}>{tApp(appLanguage, 'cash_card_payments')}</Text>
+                  <Text style={styles.heroStatLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.68}>{tApp(appLanguage, 'cash_card_payments')}</Text>
                 </View>
               </View>
 
               <View style={styles.heroStatsRowBottom}>
                 <View style={styles.heroMiniChip}>
-                  <Text style={styles.heroMiniChipText}>{tApp(appLanguage, 'cash_cash_chip')} € {incassoContanti.toFixed(0)}</Text>
+                  <Text style={styles.heroMiniChipText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{tApp(appLanguage, 'cash_cash_chip')} € {incassoContanti.toFixed(0)}</Text>
                 </View>
                 <View style={styles.heroMiniChip}>
-                  <Text style={styles.heroMiniChipText}>{tApp(appLanguage, 'cash_to_close_chip')} € {daChiudere.toFixed(0)}</Text>
+                  <Text style={styles.heroMiniChipText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{tApp(appLanguage, 'cash_to_close_chip')} € {daChiudere.toFixed(0)}</Text>
                 </View>
                 <View style={styles.heroMiniChip}>
-                  <Text style={styles.heroMiniChipText}>
+                  <Text style={styles.heroMiniChipText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>
                     {tApp(appLanguage, 'cash_linked_cards_chip')} {carteCollegate.length}
                   </Text>
                 </View>
@@ -490,6 +490,9 @@ export default function CassaScreen() {
                         ? styles.cashDisableBadgeTextActive
                         : styles.cashDisableBadgeTextIdle,
                     ]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.76}
                   >
                     {salonWorkspace.cashSectionDisabled ? 'Attiva' : 'Visibile'}
                   </Text>
@@ -539,7 +542,7 @@ export default function CassaScreen() {
               >
                 <View style={[styles.desktopLeftPane, !responsive.isDesktop && styles.desktopPaneStack]}>
                   <View style={styles.card}>
-                  <Text style={styles.cardTitle}>{tApp(appLanguage, 'cash_linked_card_title')}</Text>
+                  <Text style={styles.cardTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{tApp(appLanguage, 'cash_linked_card_title')}</Text>
                   <Text style={styles.cardHint}>
                     {tApp(appLanguage, 'cash_linked_card_hint')}
                   </Text>
@@ -587,7 +590,7 @@ export default function CassaScreen() {
                     activeOpacity={0.9}
                     disabled={!canSaveCard}
                   >
-                    <Text style={styles.buttonDarkText}>{tApp(appLanguage, 'cash_connect_card')}</Text>
+                    <Text style={styles.buttonDarkText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{tApp(appLanguage, 'cash_connect_card')}</Text>
                   </TouchableOpacity>
 
                   {carteCollegate.length > 0 ? (
@@ -608,9 +611,9 @@ export default function CassaScreen() {
                             onPress={() => impostaCartaPredefinita(item.id)}
                             activeOpacity={0.9}
                           >
-                            <Text style={styles.linkedCardCircuit}>{item.circuito}</Text>
-                            <Text style={styles.linkedCardName}>{item.nome}</Text>
-                            <Text style={styles.linkedCardDigits}>•••• {item.ultime4}</Text>
+                            <Text style={styles.linkedCardCircuit} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76}>{item.circuito}</Text>
+                            <Text style={styles.linkedCardName} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{item.nome}</Text>
+                            <Text style={styles.linkedCardDigits} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>•••• {item.ultime4}</Text>
                             <Text style={styles.linkedCardHint}>
                               {item.predefinita
                                 ? tApp(appLanguage, 'cash_card_default')
@@ -621,7 +624,7 @@ export default function CassaScreen() {
                               onPress={() => eliminaCarta(item.id)}
                               activeOpacity={0.9}
                             >
-                              <Text style={styles.linkedCardDeleteText}>
+                              <Text style={styles.linkedCardDeleteText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>
                                 {tApp(appLanguage, 'cash_remove_card')}
                               </Text>
                             </TouchableOpacity>
@@ -633,7 +636,7 @@ export default function CassaScreen() {
                   </View>
 
                   <View style={styles.card}>
-                  <Text style={styles.cardTitle}>{tApp(appLanguage, 'cash_new_income_title')}</Text>
+                  <Text style={styles.cardTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{tApp(appLanguage, 'cash_new_income_title')}</Text>
                   <Text style={styles.cardHint}>
                     {tApp(appLanguage, 'cash_new_income_hint')}
                   </Text>
@@ -693,6 +696,9 @@ export default function CassaScreen() {
                         >
                           <Text
                             style={[styles.methodChipText, selected && styles.methodChipTextActive]}
+                            numberOfLines={1}
+                            adjustsFontSizeToFit
+                            minimumFontScale={0.72}
                           >
                             {metodoPagamentoLabels[item]}
                           </Text>
@@ -703,7 +709,7 @@ export default function CassaScreen() {
 
                   {metodoPagamento === 'Carta' ? (
                     <View style={styles.autoCardBox}>
-                      <Text style={styles.autoCardTitle}>
+                      <Text style={styles.autoCardTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76}>
                         {tApp(appLanguage, 'cash_auto_card_title')}
                       </Text>
                       <Text style={styles.autoCardText}>
@@ -720,12 +726,12 @@ export default function CassaScreen() {
                     activeOpacity={0.9}
                     disabled={!canAdd}
                   >
-                    <Text style={styles.buttonDarkText}>{tApp(appLanguage, 'cash_register_income')}</Text>
+                    <Text style={styles.buttonDarkText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{tApp(appLanguage, 'cash_register_income')}</Text>
                   </TouchableOpacity>
                   </View>
 
                   <View style={styles.card}>
-                  <Text style={styles.cardTitle}>{tApp(appLanguage, 'cash_quick_services')}</Text>
+                    <Text style={styles.cardTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{tApp(appLanguage, 'cash_quick_services')}</Text>
 
                   <ScrollView
                     horizontal
@@ -741,7 +747,7 @@ export default function CassaScreen() {
                         onPress={() => selezionaServizio(item.nome, item.prezzo)}
                         activeOpacity={0.9}
                       >
-                        <Text style={styles.quickServiceChipText}>
+                        <Text style={styles.quickServiceChipText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.66}>
                           {item.nome} · € {item.prezzo.toFixed(2)}
                         </Text>
                       </TouchableOpacity>
@@ -752,7 +758,7 @@ export default function CassaScreen() {
 
                 <View style={[styles.desktopRightPane, !responsive.isDesktop && styles.desktopPaneStack]}>
                   <View style={styles.card}>
-                  <Text style={styles.cardTitle}>{tApp(appLanguage, 'cash_search_movement')}</Text>
+                  <Text style={styles.cardTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{tApp(appLanguage, 'cash_search_movement')}</Text>
 
                   <TextInput
                     ref={searchMovementRef}
@@ -841,7 +847,7 @@ export default function CassaScreen() {
               <View style={styles.itemMainInfo}>
                 <Text
                   style={styles.itemDescription}
-                  numberOfLines={1}
+                  numberOfLines={2}
                   ellipsizeMode="tail"
                 >
                   {getMovementTitle(item.descrizione)}
@@ -924,7 +930,7 @@ export default function CassaScreen() {
                     onPress={() => assegnaMetodoMovimento(item.id, metodo)}
                     activeOpacity={0.9}
                   >
-                    <Text style={styles.pendingMethodChipText}>
+                    <Text style={styles.pendingMethodChipText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>
                       {metodoPagamentoLabels[metodo]}
                     </Text>
                   </TouchableOpacity>

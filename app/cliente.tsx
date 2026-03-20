@@ -25,10 +25,12 @@ import { useAppContext } from '../src/context/AppContext';
 import {
   buildDisplayTimeSlots,
   buildFutureDates,
+  DEFAULT_MINIMUM_NOTICE_MINUTES,
   doesAppointmentOccupySlot,
   doesServiceFitWithinDaySchedule,
   doesServiceOverlapLunchBreak,
   doesServiceUseOperators,
+  doesTimeRangeConflictWithAppointment,
   findConflictingAppointment,
   formatDateCompact,
   formatDateLong,
@@ -37,6 +39,7 @@ import {
   getServiceDuration,
   getTodayDateString,
   isSlotBlockedByOverride,
+  isSlotWithinMinimumNotice,
   isTimeBlockedByLunchBreak,
   isTimeWithinDaySchedule,
   normalizeAvailabilitySettings,
@@ -167,6 +170,43 @@ const formatDurationLabel = (durationMinutes: number) => {
   if (durationMinutes === 60) return '1 ora';
   if (durationMinutes === 90) return '1 ora e 30';
   return `${durationMinutes} min`;
+};
+
+const buildGoogleCalendarEventUrl = ({
+  title,
+  startDate,
+  endDate,
+  location,
+  details,
+}: {
+  title: string;
+  startDate: Date;
+  endDate: Date;
+  location?: string;
+  details?: string;
+}) => {
+  const formatCalendarDate = (value: Date) =>
+    `${value.getFullYear()}${String(value.getMonth() + 1).padStart(2, '0')}${String(
+      value.getDate()
+    ).padStart(2, '0')}T${String(value.getHours()).padStart(2, '0')}${String(
+      value.getMinutes()
+    ).padStart(2, '0')}00`;
+
+  const params = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: title,
+    dates: `${formatCalendarDate(startDate)}/${formatCalendarDate(endDate)}`,
+  });
+
+  if (location) {
+    params.set('location', location);
+  }
+
+  if (details) {
+    params.set('details', details);
+  }
+
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
 };
 
 export default function ClienteFrontendScreen() {
@@ -415,6 +455,7 @@ export default function ClienteFrontendScreen() {
           serviceName: servizio,
           appointments: effectiveAppuntamenti,
           services: effectiveServizi,
+          settings: effectiveAvailabilitySettings,
           operatorId: operatoreId || null,
           useOperators: serviceUsesOperatorScheduling,
         })
@@ -480,6 +521,7 @@ export default function ClienteFrontendScreen() {
         serviceName: servizio,
         appointments: effectiveAppuntamenti,
         services: effectiveServizi,
+        settings: effectiveAvailabilitySettings,
         operatorId: serviceUsesOperatorScheduling ? operatoreId : null,
         useOperators: serviceUsesOperatorScheduling,
       });
@@ -532,17 +574,15 @@ export default function ClienteFrontendScreen() {
       const appointmentsForDate = appointments.filter(
         (item) => (item.data ?? getTodayDateString()) === dateValue
       );
-      const serviceStart = timeToMinutes(startTime);
-      const serviceEnd = serviceStart + getServiceDuration(serviceName, services);
+      const serviceDuration = getServiceDuration(serviceName, services);
       const overlappingAppointments = appointmentsForDate.filter((item) => {
-        const existingStart = timeToMinutes(item.ora);
-        const existingEnd =
-          existingStart +
-          (typeof item.durataMinuti === 'number'
-            ? item.durataMinuti
-            : getServiceDuration(item.servizio, services));
-
-        return serviceStart < existingEnd && serviceEnd > existingStart;
+        return doesTimeRangeConflictWithAppointment({
+          startTime,
+          durationMinutes: serviceDuration,
+          appointment: item,
+          services,
+          settings,
+        });
       });
 
       if (!serviceUsesOperatorScheduling) {
@@ -554,7 +594,7 @@ export default function ClienteFrontendScreen() {
         services,
         operators,
         appointmentDate: dateValue,
-        settings: effectiveAvailabilitySettings,
+        settings,
       });
 
       if (compatibleOperators.length === 0) {
@@ -605,6 +645,16 @@ export default function ClienteFrontendScreen() {
       }
 
       if (getDateAvailabilityInfo(effectiveAvailabilitySettings, data).closed) {
+        return true;
+      }
+
+      if (
+        isSlotWithinMinimumNotice({
+          dateValue: data,
+          timeValue: slotTime,
+          minimumNoticeMinutes: DEFAULT_MINIMUM_NOTICE_MINUTES,
+        })
+      ) {
         return true;
       }
 
@@ -664,6 +714,13 @@ export default function ClienteFrontendScreen() {
     () => getDateAvailabilityInfo(effectiveAvailabilitySettings, data),
     [effectiveAvailabilitySettings, data]
   );
+  const isSelectedTimeWithinMinimumNotice =
+    !!ora.trim() &&
+    isSlotWithinMinimumNotice({
+      dateValue: data,
+      timeValue: ora,
+      minimumNoticeMinutes: DEFAULT_MINIMUM_NOTICE_MINUTES,
+    });
   const overlapsLunchBreakSelection =
     !!servizio.trim() &&
     !!ora.trim() &&
@@ -713,6 +770,7 @@ export default function ClienteFrontendScreen() {
     ora.trim() !== '' &&
     !selectedDateAvailability.closed &&
     !clienteInibito &&
+    !isSelectedTimeWithinMinimumNotice &&
     !exceedsClosingTimeSelection &&
     !overlapsLunchBreakSelection &&
     !richiestaInConflitto;
@@ -908,6 +966,14 @@ export default function ClienteFrontendScreen() {
       Alert.alert(
         'Dati mancanti',
         'Scegli servizio, giorno e orario prima di inviare la richiesta.'
+      );
+      return;
+    }
+
+    if (isSelectedTimeWithinMinimumNotice) {
+      Alert.alert(
+        'Preavviso minimo richiesto',
+        `Per le prenotazioni di oggi servono almeno ${DEFAULT_MINIMUM_NOTICE_MINUTES} minuti di preavviso.`
       );
       return;
     }
@@ -1136,6 +1202,43 @@ export default function ClienteFrontendScreen() {
     const richiesta = mieRichieste.find((item) => item.id === richiestaId);
     if (!richiesta || richiesta.stato !== 'Accettata') return;
 
+    const eventDate = parseIsoDate(richiesta.data);
+    const startDate = new Date(eventDate);
+    const startMinutes = timeToMinutes(richiesta.ora);
+    startDate.setHours(Math.floor(startMinutes / 60), startMinutes % 60, 0, 0);
+
+    const endDate = new Date(startDate);
+    endDate.setMinutes(endDate.getMinutes() + (richiesta.durataMinuti ?? 60));
+
+    const eventTitle = `${richiesta.servizio} - ${richiesta.nome} ${richiesta.cognome}`.trim();
+    const eventNotes = [
+      `Appuntamento confermato dal salone per ${richiesta.servizio}.`,
+      salonAddress ? `Indirizzo salone: ${salonAddress}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    if (Platform.OS === 'web') {
+      try {
+        await Linking.openURL(
+          buildGoogleCalendarEventUrl({
+            title: eventTitle,
+            startDate,
+            endDate,
+            location: salonAddress || undefined,
+            details: eventNotes,
+          })
+        );
+        return;
+      } catch {
+        Alert.alert(
+          'Calendario non disponibile',
+          'Non sono riuscito ad aprire il calendario nel browser. Riprova tra un attimo.'
+        );
+        return;
+      }
+    }
+
     try {
       const permission = await Calendar.requestCalendarPermissionsAsync();
 
@@ -1147,27 +1250,12 @@ export default function ClienteFrontendScreen() {
         return;
       }
 
-      const eventDate = parseIsoDate(richiesta.data);
-      const startDate = new Date(eventDate);
-      const startMinutes = timeToMinutes(richiesta.ora);
-      startDate.setHours(Math.floor(startMinutes / 60), startMinutes % 60, 0, 0);
-
-      const endDate = new Date(startDate);
-      endDate.setMinutes(endDate.getMinutes() + (richiesta.durataMinuti ?? 60));
-
       await Calendar.createEventInCalendarAsync({
-        title: `${richiesta.servizio} - ${richiesta.nome} ${richiesta.cognome}`.trim(),
+        title: eventTitle,
         startDate,
         endDate,
         location: salonAddress || undefined,
-        notes: [
-          `Appuntamento confermato dal salone per ${richiesta.servizio}.`,
-          salonAddress
-            ? `Indirizzo salone: ${salonAddress}`
-            : null,
-        ]
-          .filter(Boolean)
-          .join('\n'),
+        notes: eventNotes,
       });
     } catch {
       Alert.alert(
@@ -1255,6 +1343,16 @@ export default function ClienteFrontendScreen() {
 
     const dialablePhone = buildDialablePhone(salonBusinessPhone);
 
+    if (Platform.OS === 'web') {
+      try {
+        await Linking.openURL(`tel:${dialablePhone}`);
+        return;
+      } catch {
+        Alert.alert('Chiamata non disponibile', 'Il browser non è riuscito ad aprire la chiamata verso il salone.');
+        return;
+      }
+    }
+
     try {
       const supported = await Linking.canOpenURL(`tel:${dialablePhone}`);
       if (!supported) {
@@ -1279,6 +1377,16 @@ export default function ClienteFrontendScreen() {
     const message = encodeURIComponent(`Ciao, ti contatto dall'app per avere informazioni su una prenotazione da ${brandLabel}.`);
     const appUrl = `whatsapp://send?phone=${dialablePhone}&text=${message}`;
     const webUrl = `https://wa.me/${dialablePhone}?text=${message}`;
+
+    if (Platform.OS === 'web') {
+      try {
+        await Linking.openURL(webUrl);
+        return;
+      } catch {
+        Alert.alert('WhatsApp non disponibile', 'Non sono riuscito ad aprire la chat WhatsApp del salone nel browser.');
+        return;
+      }
+    }
 
     try {
       const supportedApp = await Linking.canOpenURL(appUrl);

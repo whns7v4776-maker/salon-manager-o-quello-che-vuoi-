@@ -8,6 +8,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
+    "web:export": "expo export -p web",
     "lint": "expo lint",
     "supabase:db:push": "supabase db push",
     "supabase:function:deploy:push": "supabase functions deploy send-push",
@@ -64,6 +65,9 @@
     "eslint": "^9.25.0",
     "eslint-config-expo": "~10.0.0",
     "typescript": "~5.9.2"
+  },
+  "engines": {
+    "node": ">=20 <24"
   },
   "private": true
 }

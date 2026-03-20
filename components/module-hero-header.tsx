@@ -30,6 +30,8 @@ export function ModuleHeroHeader({
   subtitle,
 }: ModuleHeroHeaderProps) {
   const moduleConfig = SALON_MODULES[moduleKey];
+  const iconOffsetX = moduleConfig.iconOpticalOffset?.x ?? 0;
+  const iconOpticalOffsetY = moduleConfig.iconOpticalOffset?.y ?? 0;
 
   return (
     <View style={styles.wrap}>
@@ -47,12 +49,23 @@ export function ModuleHeroHeader({
             },
           ]}
         >
-          <Ionicons
-            name={moduleConfig.icon.active}
-            size={25}
-            color="#6f4d1f"
-            style={[styles.iconBadgeIcon, { transform: [{ translateY: iconOffsetY }] }]}
-          />
+          <View style={styles.iconBadgeInner}>
+            <Ionicons
+              name={moduleConfig.icon.active}
+              size={24}
+              color="#6f4d1f"
+              style={[
+                styles.iconBadgeIcon,
+                {
+                  transform: [
+                    { translateX: iconOffsetX },
+                    { translateY: iconOffsetY + iconOpticalOffsetY },
+                  ],
+                  lineHeight: 24,
+                },
+              ]}
+            />
+          </View>
         </View>
 
         <Text style={styles.title} onLongPress={onTitleLongPress}>
@@ -117,8 +130,17 @@ const styles = StyleSheet.create({
     elevation: 2,
     opacity: 1,
   },
+  iconBadgeInner: {
+    width: 26,
+    height: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   iconBadgeIcon: {
     opacity: 0.98,
+    textAlign: 'center',
+    textAlignVertical: 'center',
+    includeFontPadding: false,
   },
   rightAccessory: {
     position: 'absolute',

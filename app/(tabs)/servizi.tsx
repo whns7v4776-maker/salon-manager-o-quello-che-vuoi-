@@ -1,3 +1,4 @@
+import { useFocusEffect } from 'expo-router';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -9,17 +10,16 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useFocusEffect } from 'expo-router';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { ModuleHeroHeader } from '../../components/module-hero-header';
 import { ClearableTextInput } from '../../components/ui/clearable-text-input';
 import { NativeDatePickerModal } from '../../components/ui/native-date-picker-modal';
 import { NumberPickerModal } from '../../components/ui/number-picker-modal';
 import { useAppContext } from '../../src/context/AppContext';
-import { AppLanguage, tApp } from '../../src/lib/i18n';
 import { getTodayDateString, normalizeRoleName } from '../../src/lib/booking';
-import { getServiceAccentByMeta } from '../../src/lib/service-accents';
+import { AppLanguage, tApp } from '../../src/lib/i18n';
 import { useResponsiveLayout } from '../../src/lib/responsive';
+import { getServiceAccentByMeta } from '../../src/lib/service-accents';
 
 type ServizioItem = {
   id: string;
@@ -216,6 +216,8 @@ export default function ServiziScreen() {
   >(null);
   const swipeableRefs = useRef<Record<string, Swipeable | null>>({});
   const listRef = useRef<FlatList<ServizioItem> | null>(null);
+  const serviceFormOffsetRef = useRef(0);
+  const operatorFormOffsetRef = useRef(0);
   const serviceNameRef = useRef<TextInput | null>(null);
   const serviceCustomRoleRef = useRef<TextInput | null>(null);
   const operatorNameRef = useRef<TextInput | null>(null);
@@ -236,8 +238,13 @@ export default function ServiziScreen() {
   );
 
   const canSubmit = useMemo(() => {
-    return nome.trim() !== '' && prezzo.trim() !== '' && durata.trim() !== '';
-  }, [nome, prezzo, durata]);
+    return (
+      nome.trim() !== '' &&
+      prezzo.trim() !== '' &&
+      durata.trim() !== '' &&
+      mestiereRichiesto.trim() !== ''
+    );
+  }, [durata, mestiereRichiesto, nome, prezzo]);
 
   const canSubmitOperatore = useMemo(
     () => nomeOperatore.trim() !== '' && mestiereOperatore.trim() !== '',
@@ -341,6 +348,14 @@ export default function ServiziScreen() {
         : undefined;
     const nextMestiereRichiesto = mestiereRichiesto.trim();
 
+    if (!nextMestiereRichiesto) {
+      Alert.alert(
+        'Mestiere obbligatorio',
+        'Per salvare il servizio devi selezionare o scrivere il mestiere richiesto.'
+      );
+      return;
+    }
+
     if (servizioInModifica) {
       setServizi(
         servizi.map((item) =>
@@ -374,6 +389,8 @@ export default function ServiziScreen() {
   };
 
   const avviaModifica = (item: ServizioItem) => {
+    closeAllSwipeables();
+    Keyboard.dismiss();
     setServizioInModifica(item.id);
     setNome(item.nome);
     setPrezzo(item.prezzo.toString());
@@ -382,6 +399,15 @@ export default function ServiziScreen() {
     setMestiereRichiesto(item.mestiereRichiesto ?? '');
     setServiceCustomRoleOpen(!!item.mestiereRichiesto);
     setServiceRolePickerOpen(false);
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToOffset({ offset: 0, animated: true });
+      setTimeout(() => {
+        listRef.current?.scrollToOffset({ offset: 0, animated: true });
+      }, 220);
+    });
+    setTimeout(() => {
+      serviceNameRef.current?.focus();
+    }, 320);
   };
 
   const salvaOperatore = () => {
@@ -449,6 +475,8 @@ export default function ServiziScreen() {
   };
 
   const avviaModificaOperatore = (item: OperatoreItem) => {
+    closeAllSwipeables();
+    Keyboard.dismiss();
     setOperatoreInModifica(item.id);
     setNomeOperatore(item.nome);
     setMestiereOperatore(item.mestiere);
@@ -459,6 +487,13 @@ export default function ServiziScreen() {
     setAvailabilityStartDate('');
     setAvailabilityEndDate('');
     setDatePickerTarget(null);
+    listRef.current?.scrollToOffset({
+      offset: Math.max(0, operatorFormOffsetRef.current - 28),
+      animated: true,
+    });
+    setTimeout(() => {
+      operatorNameRef.current?.focus();
+    }, 250);
   };
 
   const toggleOperatorWeekday = (weekday: number) => {
@@ -630,20 +665,19 @@ export default function ServiziScreen() {
                 salonName={salonWorkspace.salonName}
                 salonNameDisplayStyle={salonWorkspace.salonNameDisplayStyle}
                 salonNameFontVariant={salonWorkspace.salonNameFontVariant}
-                iconOffsetY={7}
               />
 
               <View style={styles.heroStatsRow}>
                 <View style={styles.heroStatCardBlue}>
                   <Text style={styles.heroStatNumber}>{servizi.length}</Text>
-                  <Text style={styles.heroStatLabel}>{tApp(appLanguage, 'services_active')}</Text>
+                  <Text style={styles.heroStatLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.68}>{tApp(appLanguage, 'services_active')}</Text>
                 </View>
 
                 <View style={styles.heroStatCardRose}>
                   <Text style={styles.heroStatNumber}>
                     € {(servizi[0]?.prezzo ?? 0).toFixed(0)}
                   </Text>
-                  <Text style={styles.heroStatLabel}>{tApp(appLanguage, 'services_last_price')}</Text>
+                  <Text style={styles.heroStatLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.68}>{tApp(appLanguage, 'services_last_price')}</Text>
                 </View>
               </View>
               <Text style={styles.subtitle}>{tApp(appLanguage, 'services_subtitle')}</Text>
@@ -655,8 +689,13 @@ export default function ServiziScreen() {
                 !responsive.isDesktop && styles.desktopTopGridStack,
               ]}
             >
-              <View style={[styles.formCard, responsive.isDesktop && styles.desktopLeftPane]}>
-                <Text style={styles.cardTitle}>
+              <View
+                style={[styles.formCard, responsive.isDesktop && styles.desktopLeftPane]}
+                onLayout={(event) => {
+                  serviceFormOffsetRef.current = event.nativeEvent.layout.y;
+                }}
+              >
+                <Text style={styles.cardTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>
                   {servizioInModifica
                     ? tApp(appLanguage, 'services_edit')
                     : tApp(appLanguage, 'services_new')}
@@ -705,7 +744,7 @@ export default function ServiziScreen() {
                       ]}
                     >
                       {formatNumericFieldLabel(
-                        'Prezzo pieno',
+                        'Prezzo pieno (Opzionale)',
                         prezzoOriginale,
                         prezzoOriginale ? ' €' : ''
                       )}
@@ -764,6 +803,9 @@ export default function ServiziScreen() {
                                   styles.roleChipText,
                                   selected && styles.roleChipTextSelected,
                                 ]}
+                                numberOfLines={1}
+                                adjustsFontSizeToFit
+                                minimumFontScale={0.72}
                               >
                                 {role}
                               </Text>
@@ -778,7 +820,7 @@ export default function ServiziScreen() {
                           }}
                           activeOpacity={0.9}
                         >
-                          <Text style={styles.roleChipCreateText}>+ Crea nuovo mestiere</Text>
+                          <Text style={styles.roleChipCreateText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>+ Crea nuovo mestiere</Text>
                         </TouchableOpacity>
                       </View>
                     </View>
@@ -803,7 +845,7 @@ export default function ServiziScreen() {
                     activeOpacity={0.9}
                     disabled={!canSubmit}
                   >
-                    <Text style={styles.buttonDarkText}>
+                    <Text style={styles.buttonDarkText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>
                       {servizioInModifica
                         ? tApp(appLanguage, 'services_save_changes')
                         : tApp(appLanguage, 'services_add')}
@@ -816,13 +858,18 @@ export default function ServiziScreen() {
                     onPress={resetForm}
                     activeOpacity={0.9}
                   >
-                    <Text style={styles.buttonLightText}>{tApp(appLanguage, 'services_cancel_edit')}</Text>
+                    <Text style={styles.buttonLightText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{tApp(appLanguage, 'services_cancel_edit')}</Text>
                   </TouchableOpacity>
                 ) : null}
               </View>
 
-              <View style={[styles.formCard, responsive.isDesktop && styles.desktopRightPane]}>
-                <Text style={styles.cardTitle}>
+              <View
+                style={[styles.formCard, responsive.isDesktop && styles.desktopRightPane]}
+                onLayout={(event) => {
+                  operatorFormOffsetRef.current = event.nativeEvent.layout.y;
+                }}
+              >
+                <Text style={styles.cardTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>
                   {tApp(appLanguage, 'services_operators_title')}
                 </Text>
                 <Text style={styles.helperTextInline}>
@@ -880,6 +927,9 @@ export default function ServiziScreen() {
                                 styles.roleChipText,
                                 selected && styles.roleChipTextSelected,
                               ]}
+                              numberOfLines={1}
+                              adjustsFontSizeToFit
+                              minimumFontScale={0.72}
                             >
                               {role}
                             </Text>
@@ -894,7 +944,7 @@ export default function ServiziScreen() {
                         }}
                         activeOpacity={0.9}
                       >
-                        <Text style={styles.roleChipCreateText}>+ Crea nuovo mestiere</Text>
+                        <Text style={styles.roleChipCreateText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>+ Crea nuovo mestiere</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -933,6 +983,9 @@ export default function ServiziScreen() {
                               styles.weekdayChipText,
                               selected && styles.weekdayChipTextActive,
                             ]}
+                            numberOfLines={1}
+                            adjustsFontSizeToFit
+                            minimumFontScale={0.72}
                           >
                             {day.label}
                           </Text>
@@ -1005,14 +1058,14 @@ export default function ServiziScreen() {
                     activeOpacity={0.9}
                     disabled={!canAddAvailabilityRange}
                   >
-                    <Text style={styles.operatorAvailabilityAddText}>Aggiungi periodo</Text>
+                    <Text style={styles.operatorAvailabilityAddText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>Aggiungi periodo</Text>
                   </TouchableOpacity>
 
                   {operatorAvailabilityRanges.length > 0 ? (
                     <View style={styles.operatorRangeList}>
                       {operatorAvailabilityRanges.map((range) => (
                         <View key={range.id} style={styles.operatorRangeCard}>
-                          <Text style={styles.operatorRangeText}>
+                          <Text style={styles.operatorRangeText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>
                             {range.startDate} → {range.endDate}
                           </Text>
                           <TouchableOpacity
@@ -1126,7 +1179,7 @@ export default function ServiziScreen() {
                   activeOpacity={0.9}
                   disabled={!canSubmitOperatore}
                 >
-                  <Text style={styles.buttonDarkText}>
+                  <Text style={styles.buttonDarkText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>
                     {operatoreInModifica
                       ? tApp(appLanguage, 'services_save_operator')
                       : tApp(appLanguage, 'services_add_operator')}
@@ -1138,7 +1191,7 @@ export default function ServiziScreen() {
                     onPress={resetOperatoreForm}
                     activeOpacity={0.9}
                   >
-                    <Text style={styles.buttonLightText}>
+                    <Text style={styles.buttonLightText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>
                       {tApp(appLanguage, 'services_cancel_edit')}
                     </Text>
                   </TouchableOpacity>
@@ -1178,7 +1231,7 @@ export default function ServiziScreen() {
                                   onPress={() => avviaModificaOperatore(item)}
                                   activeOpacity={0.9}
                                 >
-                                  <Text style={styles.operatorActionText}>
+                                  <Text style={styles.operatorActionText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>
                                     {tApp(appLanguage, 'common_edit')}
                                   </Text>
                                 </TouchableOpacity>
@@ -1187,7 +1240,7 @@ export default function ServiziScreen() {
                                   onPress={() => eliminaOperatore(item.id)}
                                   activeOpacity={0.9}
                                 >
-                                  <Text style={styles.operatorDeleteText}>Elimina</Text>
+                                  <Text style={styles.operatorDeleteText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>Elimina</Text>
                                 </TouchableOpacity>
                               </View>
                             </View>
@@ -1207,7 +1260,7 @@ export default function ServiziScreen() {
             </View>
 
             <View style={styles.formCard}>
-              <Text style={styles.cardTitle}>{tApp(appLanguage, 'services_quick_notes')}</Text>
+              <Text style={styles.cardTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{tApp(appLanguage, 'services_quick_notes')}</Text>
               <Text style={styles.helperTextInline}>
                 {tApp(appLanguage, 'services_notes_duration')}
               </Text>
@@ -1225,7 +1278,7 @@ export default function ServiziScreen() {
               </Text>
               </View>
 
-            <Text style={styles.listTitle}>{tApp(appLanguage, 'services_list')}</Text>
+            <Text style={styles.listTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{tApp(appLanguage, 'services_list')}</Text>
           </View>
         }
         renderItem={({ item }) => (
@@ -1275,7 +1328,12 @@ export default function ServiziScreen() {
               ]}
             >
               <View style={styles.itemLeft}>
-                <Text style={[styles.serviceName, { color: accent.text }]} numberOfLines={2}>
+                <Text
+                  style={[styles.serviceName, { color: accent.text }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.68}
+                >
                   {item.nome}
                 </Text>
                 {item.mestiereRichiesto ? (

@@ -18,6 +18,7 @@ import {
     StyleSheet,
     Text,
     TouchableOpacity,
+    useWindowDimensions,
     View,
 } from 'react-native';
 import { useAppContext } from '../../src/context/AppContext';
@@ -35,8 +36,6 @@ const ExpoRouterMaterialTopTabs = withLayoutContext<
 
 const IS_ANDROID = Platform.OS === 'android';
 const TAB_BAR_OUTER_BOTTOM = IS_ANDROID ? 28 : 16;
-const TAB_BAR_HEIGHT = IS_ANDROID ? 82 : 74;
-const TAB_BAR_VERTICAL_PADDING = IS_ANDROID ? 12 : 10;
 
 function BottomTabBar({
   state,
@@ -46,6 +45,7 @@ function BottomTabBar({
   clientiNonLetti,
 }: MaterialTopTabBarProps & { richiesteInAttesa: number; clientiNonLetti: number }) {
   const { appLanguage } = useAppContext();
+  const { width: viewportWidth } = useWindowDimensions();
   const tabTitles = React.useMemo(
     () => ({
       index: tApp(appLanguage, 'tab_home'),
@@ -66,8 +66,34 @@ function BottomTabBar({
   const [dragIndex, setDragIndex] = React.useState<number | null>(null);
   const [isDragging, setIsDragging] = React.useState(false);
   const tabCount = state.routes.length || 1;
+  const tabBarHorizontalPadding = viewportWidth <= 360 ? 12 : viewportWidth <= 390 ? 14 : 16;
+  const availableBarWidth = Math.min(
+    Math.max(viewportWidth - tabBarHorizontalPadding * 2, 0),
+    420
+  );
+  const theoreticalItemWidth = availableBarWidth > 0 ? availableBarWidth / tabCount : 0;
+  const isUltraCompact = theoreticalItemWidth > 0 && theoreticalItemWidth < 56;
+  const isCompact = theoreticalItemWidth > 0 && theoreticalItemWidth < 64;
+  const tabBarHeight = isUltraCompact
+    ? IS_ANDROID
+      ? 72
+      : 68
+    : isCompact
+      ? IS_ANDROID
+        ? 78
+        : 72
+      : IS_ANDROID
+        ? 82
+        : 74;
+  const tabBarVerticalPadding = isUltraCompact ? 8 : isCompact ? 9 : IS_ANDROID ? 12 : 10;
+  const tabIconSize = isUltraCompact ? 18 : isCompact ? 20 : 22;
+  const tabLabelFontSize = isUltraCompact ? 9 : isCompact ? 10 : 11;
+  const tabLabelMinScale = isUltraCompact ? 0.78 : 0.84;
+  const tabItemHorizontalMargin = isUltraCompact ? 1 : isCompact ? 2 : 4;
+  const tabItemVerticalPadding = isUltraCompact ? 2 : 4;
   const itemWidth = tabBarWidth > 0 ? tabBarWidth / tabCount : 0;
-  const activeIndicatorWidth = itemWidth > 0 ? Math.max(54, itemWidth - 8) : 0;
+  const activeIndicatorInset = isUltraCompact ? 2 : isCompact ? 4 : 8;
+  const activeIndicatorWidth = itemWidth > 0 ? Math.max(40, itemWidth - activeIndicatorInset) : 0;
   const visualIndex = dragIndex ?? state.index;
   const lastTriggeredIndexRef = React.useRef<number | null>(null);
   const skipNextHapticIndexRef = React.useRef<number | null>(null);
@@ -93,6 +119,7 @@ function BottomTabBar({
   const getProgressFromTouch = React.useCallback(
     (pageX: number) => {
       if (itemWidth <= 0) return null;
+
       const locationX = pageX - tabBarPageX;
       const clampedX = Math.max(0, Math.min(tabBarWidth - 0.001, locationX));
       const centeredProgress = clampedX / itemWidth - 0.5;
@@ -120,7 +147,6 @@ function BottomTabBar({
       return;
     }
 
-    // Keep only state bookkeeping here; haptics are triggered immediately on press/swipe release.
     previousIndexRef.current = state.index;
   }, [state.index]);
 
@@ -189,7 +215,14 @@ function BottomTabBar({
       setDragIndex(null);
       lastTriggeredIndexRef.current = null;
     },
-    [dragIndex, getIndexFromTouch, indicatorProgress, itemWidth, navigateToIndex, triggerImmediateHaptic]
+    [
+      dragIndex,
+      getIndexFromTouch,
+      indicatorProgress,
+      itemWidth,
+      navigateToIndex,
+      triggerImmediateHaptic,
+    ]
   );
 
   const panResponder = React.useMemo(
@@ -236,10 +269,17 @@ function BottomTabBar({
 
   return (
     <View pointerEvents="box-none" style={styles.tabBarOverlay}>
-      <View style={styles.tabBarOuter}>
+      <View style={[styles.tabBarOuter, { paddingHorizontal: tabBarHorizontalPadding }]}>
         <View
           ref={tabBarRef}
-          style={styles.tabBar}
+          style={[
+            styles.tabBar,
+            {
+              height: tabBarHeight,
+              paddingTop: tabBarVerticalPadding,
+              paddingBottom: tabBarVerticalPadding,
+            },
+          ]}
           onLayout={handleTabBarLayout}
           {...panResponder.panHandlers}
         >
@@ -251,11 +291,7 @@ function BottomTabBar({
                 styles.activeIndicator,
                 {
                   width: activeIndicatorWidth,
-                  transform: [
-                    {
-                      translateX: indicatorTranslateX,
-                    },
-                  ],
+                  transform: [{ translateX: indicatorTranslateX }],
                 },
               ]}
             />
@@ -319,11 +355,17 @@ function BottomTabBar({
                 }}
                 onLongPress={onLongPress}
                 activeOpacity={0.9}
-                style={styles.tabBarItem}
+                style={[
+                  styles.tabBarItem,
+                  {
+                    marginHorizontal: tabItemHorizontalMargin,
+                    paddingVertical: tabItemVerticalPadding,
+                  },
+                ]}
               >
                 <Ionicons
                   name={isFocused ? config.icon.active : config.icon.inactive}
-                  size={22}
+                  size={tabIconSize}
                   color={isFocused ? '#111111' : '#5b6472'}
                 />
                 {route.name === 'prenotazioni' && richiesteInAttesa > 0 ? (
@@ -341,8 +383,12 @@ function BottomTabBar({
                   </View>
                 ) : null}
                 <Text
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={tabLabelMinScale}
                   style={[
                     styles.tabBarLabel,
+                    { fontSize: tabLabelFontSize },
                     isFocused ? styles.tabBarLabelActive : styles.tabBarLabelInactive,
                   ]}
                 >
@@ -360,7 +406,8 @@ function BottomTabBar({
 export default function TabLayout() {
   const { richiestePrenotazione, clienti, appLanguage } = useAppContext();
   const richiesteInAttesa = richiestePrenotazione.filter(
-    (item) => item.stato === 'In attesa' || (item.stato === 'Annullata' && item.viewedBySalon === false)
+    (item) =>
+      item.stato === 'In attesa' || (item.stato === 'Annullata' && item.viewedBySalon === false)
   ).length;
   const clientiNonLetti = clienti.filter(
     (item) => item.fonte === 'frontend' && item.viewedBySalon === false
@@ -427,18 +474,14 @@ const styles = StyleSheet.create({
   },
   tabBarOuter: {
     width: '100%',
-    paddingHorizontal: 16,
     paddingBottom: TAB_BAR_OUTER_BOTTOM,
     alignItems: 'center',
     backgroundColor: 'transparent',
   },
   tabBar: {
     flexDirection: 'row',
-    height: TAB_BAR_HEIGHT,
     width: '100%',
     maxWidth: 420,
-    paddingTop: TAB_BAR_VERTICAL_PADDING,
-    paddingBottom: TAB_BAR_VERTICAL_PADDING,
     backgroundColor: 'rgba(214, 228, 248, 0.9)',
     borderRadius: 26,
     borderWidth: 1,
@@ -461,10 +504,9 @@ const styles = StyleSheet.create({
   },
   tabBarItem: {
     flex: 1,
+    minWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 4,
-    marginHorizontal: 4,
     borderRadius: 18,
     zIndex: 2,
   },
@@ -485,7 +527,7 @@ const styles = StyleSheet.create({
   notificationBadge: {
     position: 'absolute',
     top: 1,
-    right: 12,
+    right: 8,
     minWidth: 22,
     height: 22,
     borderRadius: 999,
@@ -508,9 +550,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   tabBarLabel: {
-    fontSize: 11,
     fontWeight: '700',
-    marginTop: 2,
+    marginTop: 3,
+    textAlign: 'center',
+    width: '100%',
   },
   tabBarLabelActive: {
     color: '#111111',

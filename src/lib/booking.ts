@@ -81,10 +81,14 @@ export type AvailabilitySettings = {
   slotOverrides: SlotOverride[];
   dateSlotIntervals: { date: string; slotIntervalMinutes: number }[];
   slotIntervalMinutes: number;
+  appointmentBufferEnabled: boolean;
+  appointmentBufferMinutes: number;
   lunchBreakEnabled: boolean;
   lunchBreakStart: string;
   lunchBreakEnd: string;
 };
+
+export const DEFAULT_MINIMUM_NOTICE_MINUTES = 30;
 
 const GIORNI_SETTIMANA = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
 const MESI = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic'];
@@ -224,6 +228,14 @@ export const normalizeAvailabilitySettings = (
       ? settings.slotIntervalMinutes
       : 30;
 
+  const normalizedAppointmentBufferMinutes =
+    typeof settings?.appointmentBufferMinutes === 'number' &&
+    settings.appointmentBufferMinutes >= 5 &&
+    settings.appointmentBufferMinutes <= 30 &&
+    settings.appointmentBufferMinutes % 5 === 0
+      ? settings.appointmentBufferMinutes
+      : 5;
+
   return {
     weeklySchedule,
     vacationRanges: (settings?.vacationRanges ?? []).map((item) => ({
@@ -241,10 +253,47 @@ export const normalizeAvailabilitySettings = (
         item.slotIntervalMinutes % 15 === 0
     ),
     slotIntervalMinutes: normalizedSlotInterval,
+    appointmentBufferEnabled: settings?.appointmentBufferEnabled ?? false,
+    appointmentBufferMinutes: normalizedAppointmentBufferMinutes,
     lunchBreakEnabled: settings?.lunchBreakEnabled ?? false,
     lunchBreakStart: settings?.lunchBreakStart ?? '13:00',
     lunchBreakEnd: settings?.lunchBreakEnd ?? '14:00',
   };
+};
+
+export const getAppointmentBufferMinutes = (
+  settings?: Partial<AvailabilitySettings> | null
+) => {
+  if (!settings?.appointmentBufferEnabled) return 0;
+
+  const minutes = settings.appointmentBufferMinutes;
+
+  return typeof minutes === 'number' && minutes >= 5 && minutes <= 30 && minutes % 5 === 0
+    ? minutes
+    : 5;
+};
+
+export const isSlotWithinMinimumNotice = ({
+  dateValue,
+  timeValue,
+  now = new Date(),
+  minimumNoticeMinutes = DEFAULT_MINIMUM_NOTICE_MINUTES,
+}: {
+  dateValue: string;
+  timeValue: string;
+  now?: Date;
+  minimumNoticeMinutes?: number;
+}) => {
+  const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
+    now.getDate()
+  ).padStart(2, '0')}`;
+
+  if (dateValue !== todayIso) {
+    return false;
+  }
+
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  return timeToMinutes(timeValue) < currentMinutes + minimumNoticeMinutes;
 };
 
 export const getSlotIntervalForDate = (
@@ -523,6 +572,33 @@ export const getAppointmentEndTime = (
   return minutesToTime(timeToMinutes(appointment.ora) + duration);
 };
 
+export const doesTimeRangeConflictWithAppointment = ({
+  startTime,
+  durationMinutes,
+  appointment,
+  services,
+  settings,
+}: {
+  startTime: string;
+  durationMinutes: number;
+  appointment: Pick<SharedAppointment, 'ora' | 'servizio' | 'durataMinuti'>;
+  services: SharedService[];
+  settings?: AvailabilitySettings | null;
+}) => {
+  const newStart = timeToMinutes(startTime);
+  const newEnd = newStart + durationMinutes;
+  const bufferMinutes = getAppointmentBufferMinutes(settings);
+  const existingStart = timeToMinutes(appointment.ora) - bufferMinutes;
+  const existingEnd =
+    timeToMinutes(appointment.ora) +
+    (typeof appointment.durataMinuti === 'number'
+      ? appointment.durataMinuti
+      : getServiceDuration(appointment.servizio, services)) +
+    bufferMinutes;
+
+  return newStart < existingEnd && newEnd > existingStart;
+};
+
 export const doesAppointmentOccupySlot = (
   appointment: Pick<SharedAppointment, 'ora' | 'servizio' | 'durataMinuti'>,
   slotTime: string,
@@ -545,6 +621,7 @@ export const findConflictingAppointment = ({
   serviceName,
   appointments,
   services,
+  settings,
   operatorId,
   useOperators = false,
 }: {
@@ -553,11 +630,11 @@ export const findConflictingAppointment = ({
   serviceName: string;
   appointments: SharedAppointment[];
   services: SharedService[];
+  settings?: AvailabilitySettings | null;
   operatorId?: string | null;
   useOperators?: boolean;
 }) => {
-  const newStart = timeToMinutes(startTime);
-  const newEnd = newStart + getServiceDuration(serviceName, services);
+  const durationMinutes = getServiceDuration(serviceName, services);
 
   return (
     appointments.find((item) => {
@@ -572,14 +649,13 @@ export const findConflictingAppointment = ({
         }
       }
 
-      const existingStart = timeToMinutes(item.ora);
-      const existingEnd =
-        existingStart +
-        (typeof item.durataMinuti === 'number'
-          ? item.durataMinuti
-          : getServiceDuration(item.servizio, services));
-
-      return newStart < existingEnd && newEnd > existingStart;
+      return doesTimeRangeConflictWithAppointment({
+        startTime,
+        durationMinutes,
+        appointment: item,
+        services,
+        settings,
+      });
     }) ?? null
   );
 };

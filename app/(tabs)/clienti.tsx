@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { ModuleHeroHeader } from '../../components/module-hero-header';
 import { ClearableTextInput } from '../../components/ui/clearable-text-input';
+import { WheelDatePickerModal } from '../../components/ui/wheel-date-picker-modal';
 import { useAppContext } from '../../src/context/AppContext';
 import { useResponsiveLayout } from '../../src/lib/responsive';
 import { supabase } from '../../src/lib/supabase';
@@ -38,6 +39,31 @@ const buildInstagramUrl = (value?: string | null) => {
   return handle ? `https://instagram.com/${handle}` : '';
 };
 
+const normalizeBirthdayValue = (value?: string | null) => {
+  const trimmedValue = value?.trim() ?? '';
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmedValue)) {
+    return trimmedValue;
+  }
+
+  const slashDateMatch = trimmedValue.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (slashDateMatch) {
+    const [, day, month, year] = slashDateMatch;
+    return `${year}-${month}-${day}`;
+  }
+
+  return '';
+};
+
+const formatBirthdayLabel = (value?: string | null) => {
+  const normalizedValue = normalizeBirthdayValue(value);
+  if (!normalizedValue) return '';
+
+  const [year, month, day] = normalizedValue.split('-');
+  if (!year || !month || !day) return '';
+  return `${day}/${month}/${year}`;
+};
+
 export default function ClientiScreen() {
   const responsive = useResponsiveLayout();
   const {
@@ -50,7 +76,6 @@ export default function ClientiScreen() {
   const phoneInputRef = useRef<TextInput | null>(null);
   const emailInputRef = useRef<TextInput | null>(null);
   const instagramInputRef = useRef<TextInput | null>(null);
-  const birthdayInputRef = useRef<TextInput | null>(null);
 
   const [clienti, setClienti] = useState<ClienteItem[]>([]);
   const [clienteInModifica, setClienteInModifica] = useState<ClienteItem | null>(null);
@@ -60,8 +85,8 @@ export default function ClientiScreen() {
   const [email, setEmail] = useState('');
   const [instagram, setInstagram] = useState('');
   const [birthday, setBirthday] = useState('');
+  const [showBirthdayPicker, setShowBirthdayPicker] = useState(false);
   const [ricerca, setRicerca] = useState('');
-  const [showClientForm, setShowClientForm] = useState(false);
 
   const [salonId, setSalonId] = useState<string | null>(null);
   const [storageMode, setStorageMode] = useState<'local' | 'remote'>('local');
@@ -77,7 +102,7 @@ export default function ClientiScreen() {
         email: item.email ?? null,
         instagram: item.instagram ?? null,
         birthday: item.birthday ?? null,
-        is_active: true,
+        is_active: item.inibito !== true,
         salon_id: fallbackSalonId,
       })),
     []
@@ -200,7 +225,7 @@ export default function ClientiScreen() {
     setTelefono(cliente.phone ?? '');
     setEmail(cliente.email ?? '');
     setInstagram(cliente.instagram ?? '');
-    setBirthday(cliente.birthday ?? '');
+    setBirthday(normalizeBirthdayValue(cliente.birthday));
   };
 
   const salvaCliente = async () => {
@@ -348,6 +373,53 @@ export default function ClientiScreen() {
     ]);
   };
 
+  const toggleInibizioneCliente = async (cliente: ClienteItem) => {
+    const isCurrentlyActive = cliente.is_active ?? true;
+    const nextIsActive = !isCurrentlyActive;
+    const actionLabel = nextIsActive ? 'sbloccare' : 'inibire';
+
+    Alert.alert(
+      'Conferma',
+      nextIsActive
+        ? `${cliente.full_name} tornerà a vedere gli slot disponibili e potrà prenotare di nuovo.`
+        : `${cliente.full_name} vedrà tutti gli slot occupati finché non lo sblocchi.`,
+      [
+        { text: 'Annulla', style: 'cancel' },
+        {
+          text: nextIsActive ? 'Sblocca' : 'Inibisci',
+          style: nextIsActive ? 'default' : 'destructive',
+          onPress: async () => {
+            try {
+              if (storageMode === 'local' || !salonId) {
+                setLocalClienti((current) =>
+                  current.map((item) =>
+                    item.id === cliente.id ? { ...item, inibito: !nextIsActive } : item
+                  )
+                );
+                return;
+              }
+
+              const { error } = await supabase
+                .from('clients')
+                .update({ is_active: nextIsActive })
+                .eq('id', cliente.id)
+                .eq('salon_id', salonId);
+
+              if (error) {
+                Alert.alert('Errore', error.message);
+                return;
+              }
+
+              await caricaClienti(salonId);
+            } catch (error: any) {
+              Alert.alert('Errore', error?.message || `Non sono riuscito a ${actionLabel} il cliente.`);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const clientiFiltrati = useMemo(() => {
     const testo = ricerca.trim().toLowerCase();
 
@@ -364,6 +436,13 @@ export default function ClientiScreen() {
 
   const renderClienteCard = (item: ClienteItem) => {
     const isSelected = clienteInModifica?.id === item.id;
+    const isInibito = (item.is_active ?? true) === false;
+    const instagramHandle = item.instagram?.replace(/^@+/, '') ?? '';
+    const canOpenInstagram = instagramHandle.trim() !== '';
+    const compactContactChips = responsive.width < 390;
+    const ultraCompactContactChips = responsive.width < 360;
+    const compactSideActions = responsive.width < 390;
+    const ultraCompactSideActions = responsive.width < 360;
 
     return (
       <TouchableOpacity
@@ -372,69 +451,126 @@ export default function ClientiScreen() {
         style={[styles.clienteCard, isSelected && styles.clienteCardSelected]}
       >
         <View style={styles.clienteMain}>
-          <View style={styles.clienteInitialBadge}>
-            <Text style={styles.clienteInitialText}>
-              {(item.full_name?.trim()?.charAt(0) || '?').toUpperCase()}
-            </Text>
-          </View>
+          <View style={styles.clienteIdentityRow}>
+            <View style={styles.clienteInitialBadge}>
+              <Text style={styles.clienteInitialText}>
+                {(item.full_name?.trim()?.charAt(0) || '?').toUpperCase()}
+              </Text>
+            </View>
 
-          <View style={styles.clienteInfo}>
-            <Text style={styles.clienteNome} numberOfLines={1}>
-              {item.full_name}
-            </Text>
-            <Text style={styles.clienteTelefono}>{item.phone}</Text>
-            {item.email ? (
-              <Text style={styles.clienteEmail} numberOfLines={1}>
-                {item.email}
-              </Text>
-            ) : null}
-            {item.instagram ? (
-              <Text style={styles.clienteInstagram} numberOfLines={1}>
-                @{item.instagram.replace(/^@+/, '')}
-              </Text>
-            ) : null}
-            <Text style={styles.clienteHint}>
-              Tocca per modificare
-            </Text>
-            <View style={styles.quickActionsRow}>
-              <TouchableOpacity
-                style={styles.quickActionChip}
-                onPress={() => Linking.openURL(`tel:${buildDialablePhone(item.phone)}`).catch(() => null)}
-                activeOpacity={0.9}
-              >
-                <Text style={styles.quickActionText}>Chiama</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.quickActionChip, styles.quickActionChipWhatsapp]}
-                onPress={() => Linking.openURL(buildWhatsappUrl(item.phone)).catch(() => null)}
-                activeOpacity={0.9}
-              >
-                <Text style={[styles.quickActionText, styles.quickActionTextWhatsapp]}>
-                  WhatsApp
+            <View style={styles.clienteInfo}>
+              <View style={styles.clienteTitleRow}>
+                <Text style={styles.clienteNome} numberOfLines={1}>
+                  {item.full_name}
                 </Text>
-              </TouchableOpacity>
-              {item.instagram ? (
+                {isInibito ? (
+                  <View style={styles.statusBadgeBlocked}>
+                    <Text style={styles.statusBadgeBlockedText}>Inibito</Text>
+                  </View>
+                ) : null}
+              </View>
+
+              <Text style={styles.clienteTelefono} numberOfLines={1}>{item.phone}</Text>
+
+              {(item.email || canOpenInstagram) ? (
+                <View style={styles.clienteMetaRow}>
+                  {item.email ? (
+                    <Text style={styles.clienteEmailCompact} numberOfLines={1}>
+                      {item.email}
+                    </Text>
+                  ) : null}
+                  {canOpenInstagram ? (
+                    <Text style={styles.clienteInstagramCompact} numberOfLines={1}>
+                      @{instagramHandle}
+                    </Text>
+                  ) : null}
+                </View>
+              ) : null}
+
+              <View style={[styles.quickActionsRow, compactContactChips && styles.quickActionsRowCompact]}>
                 <TouchableOpacity
-                  style={[styles.quickActionChip, styles.quickActionChipInstagram]}
-                  onPress={() => Linking.openURL(buildInstagramUrl(item.instagram) || '').catch(() => null)}
+                  style={[styles.quickActionChip, compactContactChips && styles.quickActionChipCompact]}
+                  onPress={() => Linking.openURL(`tel:${buildDialablePhone(item.phone)}`).catch(() => null)}
                   activeOpacity={0.9}
                 >
-                  <Text style={[styles.quickActionText, styles.quickActionTextInstagram]}>
-                    Instagram
+                  <Text style={[styles.quickActionText, compactContactChips && styles.quickActionTextCompact]}>
+                    {ultraCompactContactChips ? 'Call' : 'Chiama'}
                   </Text>
                 </TouchableOpacity>
-              ) : null}
+                <TouchableOpacity
+                  style={[styles.quickActionChip, styles.quickActionChipWhatsapp, compactContactChips && styles.quickActionChipCompact]}
+                  onPress={() => Linking.openURL(buildWhatsappUrl(item.phone)).catch(() => null)}
+                  activeOpacity={0.9}
+                >
+                  <Text style={[styles.quickActionText, styles.quickActionTextWhatsapp, compactContactChips && styles.quickActionTextCompact]}>
+                    {ultraCompactContactChips ? 'WA' : 'WhatsApp'}
+                  </Text>
+                </TouchableOpacity>
+                {canOpenInstagram ? (
+                  <TouchableOpacity
+                    style={[styles.quickActionChip, styles.quickActionChipInstagram, compactContactChips && styles.quickActionChipCompact]}
+                    onPress={() => Linking.openURL(buildInstagramUrl(item.instagram) || '').catch(() => null)}
+                    activeOpacity={0.9}
+                  >
+                    <Text style={[styles.quickActionText, styles.quickActionTextInstagram, compactContactChips && styles.quickActionTextCompact]}>
+                      {ultraCompactContactChips ? 'IG' : 'Instagram'}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
             </View>
           </View>
+
+          <Text style={styles.clienteTapHint}>Tocca la card per modificare</Text>
         </View>
 
-        <TouchableOpacity
-          onPress={() => eliminaCliente(item.id, item.full_name)}
-          activeOpacity={0.9}
-          style={styles.deleteButton}
-        >
-          <Text style={styles.deleteButtonText}>Elimina</Text>
-        </TouchableOpacity>
+        <View style={[styles.cardActionsColumn, compactSideActions && styles.cardActionsColumnCompact]}>
+          <TouchableOpacity
+            onPress={() => toggleInibizioneCliente(item)}
+            activeOpacity={0.9}
+            style={[
+              styles.sideActionButton,
+              compactSideActions && styles.sideActionButtonCompact,
+              isInibito ? styles.sideActionButtonSuccess : styles.sideActionButtonWarning,
+            ]}
+          >
+            <Text
+              style={[
+                styles.sideActionButtonText,
+                compactSideActions && styles.sideActionButtonTextCompact,
+                isInibito ? styles.sideActionButtonTextSuccess : styles.sideActionButtonTextWarning,
+              ]}
+            >
+              {isInibito
+                ? ultraCompactSideActions
+                  ? 'On'
+                  : 'Sblocca'
+                : ultraCompactSideActions
+                  ? 'Off'
+                  : 'Inibisci'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => eliminaCliente(item.id, item.full_name)}
+            activeOpacity={0.9}
+            style={[
+              styles.sideActionButton,
+              compactSideActions && styles.sideActionButtonCompact,
+              styles.sideActionButtonDanger,
+            ]}
+          >
+            <Text
+              style={[
+                styles.sideActionButtonText,
+                compactSideActions && styles.sideActionButtonTextCompact,
+                styles.sideActionButtonTextDanger,
+              ]}
+            >
+              {ultraCompactSideActions ? 'Del' : 'Elimina'}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </TouchableOpacity>
     );
   };
@@ -491,20 +627,9 @@ export default function ClientiScreen() {
                 </View>
 
                 <View style={styles.bookingBadge}>
-                  <Text style={styles.bookingBadgeText}>{clienti.length} clienti</Text>
+                  <Text style={styles.bookingBadgeText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76}>{clienti.length} clienti</Text>
                 </View>
               </View>
-              <TouchableOpacity
-                style={styles.formToggleChip}
-                onPress={() => setShowClientForm((current) => !current)}
-                activeOpacity={0.9}
-              >
-                <Text style={styles.formToggleChipText}>
-                  {showClientForm ? 'Riduci blocco' : 'Espandi blocco'}
-                </Text>
-              </TouchableOpacity>
-
-              {showClientForm ? (
                 <>
                   <View style={styles.formFieldsWrap}>
                     <ClearableTextInput
@@ -536,7 +661,7 @@ export default function ClientiScreen() {
 
                     <ClearableTextInput
                       ref={emailInputRef}
-                      placeholder="Inserisci email"
+                      placeholder="Email (Opzionale)"
                       placeholderTextColor="#9a9a9a"
                       value={email}
                       onChangeText={setEmail}
@@ -551,7 +676,7 @@ export default function ClientiScreen() {
 
                     <ClearableTextInput
                       ref={instagramInputRef}
-                      placeholder="@nomeprofilo"
+                      placeholder="Instagram (Opzionale)"
                       placeholderTextColor="#9a9a9a"
                       value={instagram}
                       onChangeText={setInstagram}
@@ -559,23 +684,51 @@ export default function ClientiScreen() {
                       autoCapitalize="none"
                       style={styles.input}
                       returnKeyType="next"
-                      onSubmitEditing={() => birthdayInputRef.current?.focus()}
+                      onSubmitEditing={() => {
+                        Keyboard.dismiss();
+                        setShowBirthdayPicker(true);
+                      }}
                       blurOnSubmit={false}
                     />
 
-                    <ClearableTextInput
-                      ref={birthdayInputRef}
-                      placeholder="GG/MM/AAAA"
-                      placeholderTextColor="#9a9a9a"
-                      value={birthday}
-                      onChangeText={setBirthday}
-                      editable={!saving && !loadingInit}
-                      keyboardType="numbers-and-punctuation"
-                      style={styles.input}
-                      returnKeyType="done"
-                      onSubmitEditing={Keyboard.dismiss}
-                    />
+                    <TouchableOpacity
+                      style={[
+                        styles.input,
+                        styles.dateInputButton,
+                        (saving || loadingInit) && styles.primaryButtonDisabled,
+                      ]}
+                      onPress={() => {
+                        Keyboard.dismiss();
+                        setShowBirthdayPicker(true);
+                      }}
+                      activeOpacity={0.9}
+                      disabled={saving || loadingInit}
+                    >
+                      <Text
+                        style={[
+                          styles.dateInputText,
+                          !birthday && styles.dateInputPlaceholder,
+                        ]}
+                      >
+                        {formatBirthdayLabel(birthday) || 'Compleanno / Data (Opzionale)'}
+                      </Text>
+                    </TouchableOpacity>
+
+                    {birthday ? (
+                      <TouchableOpacity
+                        style={styles.clearDateChip}
+                        onPress={() => setBirthday('')}
+                        activeOpacity={0.9}
+                        disabled={saving || loadingInit}
+                      >
+                        <Text style={styles.clearDateChipText}>Rimuovi data</Text>
+                      </TouchableOpacity>
+                    ) : null}
                   </View>
+
+                  <Text style={styles.requiredFieldsHint}>
+                    Obbligatori: nome e cognome, numero di telefono.
+                  </Text>
 
                   <View style={styles.actionRow}>
                     <TouchableOpacity
@@ -605,7 +758,6 @@ export default function ClientiScreen() {
                     </TouchableOpacity>
                   </View>
                 </>
-              ) : null}
             </View>
 
             <View style={styles.searchCard}>
@@ -644,6 +796,17 @@ export default function ClientiScreen() {
           </View>
         )}
         ListFooterComponent={<View style={{ height: 24 }} />}
+      />
+
+      <WheelDatePickerModal
+        visible={showBirthdayPicker}
+        title="Compleanno / Data (Opzionale)"
+        initialValue={birthday || undefined}
+        onClose={() => setShowBirthdayPicker(false)}
+        onConfirm={(value) => {
+          setBirthday(value);
+          setShowBirthdayPicker(false);
+        }}
       />
     </View>
   );
@@ -781,6 +944,44 @@ const styles = StyleSheet.create({
   searchInput: {
     marginTop: 10,
   },
+  dateInputButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dateInputText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111111',
+    textAlign: 'center',
+  },
+  dateInputPlaceholder: {
+    color: '#9a9a9a',
+  },
+  clearDateChip: {
+    alignSelf: 'center',
+    marginTop: -2,
+    marginBottom: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#dbe4ec',
+  },
+  clearDateChipText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#475569',
+    textAlign: 'center',
+  },
+  requiredFieldsHint: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#64748b',
+    textAlign: 'center',
+    marginTop: 2,
+    marginBottom: 8,
+  },
   actionRow: {
     flexDirection: 'row',
     gap: 10,
@@ -860,7 +1061,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderRadius: 18,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 9,
     marginBottom: 8,
     borderWidth: 1,
     borderColor: '#e2e8f0',
@@ -878,82 +1079,107 @@ const styles = StyleSheet.create({
     borderWidth: 2,
   },
   clienteMain: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
     flex: 1,
     marginRight: 10,
   },
+  clienteIdentityRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
   clienteInitialBadge: {
-    width: 38,
-    height: 38,
+    width: 36,
+    height: 36,
     borderRadius: 999,
     backgroundColor: '#111827',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 10,
-    marginTop: 2,
+    marginRight: 9,
+    marginTop: 1,
   },
   clienteInitialText: {
     color: '#ffffff',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '800',
   },
   clienteInfo: {
     flex: 1,
     alignItems: 'flex-start',
+    minWidth: 0,
+  },
+  clienteTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    width: '100%',
+    minWidth: 0,
   },
   clienteNome: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '900',
     color: '#111111',
-    marginBottom: 2,
+    marginBottom: 1,
     textAlign: 'left',
+    flex: 1,
   },
   clienteTelefono: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#64748b',
-    fontWeight: '700',
+    fontWeight: '800',
     textAlign: 'left',
   },
-  clienteEmail: {
-    fontSize: 12,
+  clienteMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 1,
+  },
+  clienteEmailCompact: {
+    fontSize: 11,
     color: '#94a3b8',
     fontWeight: '600',
-    marginTop: 1,
     textAlign: 'left',
   },
-  clienteInstagram: {
-    fontSize: 12,
-    color: '#7c3aed',
-    fontWeight: '700',
-    marginTop: 1,
-    textAlign: 'left',
-  },
-  clienteHint: {
+  clienteInstagramCompact: {
     fontSize: 11,
+    color: '#7c3aed',
+    fontWeight: '800',
+    textAlign: 'left',
+  },
+  clienteTapHint: {
+    fontSize: 10,
     color: '#94a3b8',
     fontWeight: '700',
     marginTop: 4,
+    marginLeft: 45,
     textAlign: 'left',
   },
   quickActionsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
     gap: 6,
     marginTop: 6,
     width: '100%',
   },
+  quickActionsRowCompact: {
+    gap: 5,
+    marginTop: 5,
+  },
   quickActionChip: {
     backgroundColor: '#f8fafc',
-    borderRadius: 12,
+    borderRadius: 11,
     paddingHorizontal: 8,
-    paddingVertical: 7,
+    paddingVertical: 6,
     borderWidth: 1,
     borderColor: '#dbe4ec',
-    minWidth: '48%',
-    maxWidth: '48%',
+    minWidth: 82,
     alignItems: 'center',
+  },
+  quickActionChipCompact: {
+    minWidth: 62,
+    paddingHorizontal: 7,
+    paddingVertical: 5,
+    borderRadius: 10,
   },
   quickActionChipWhatsapp: {
     backgroundColor: '#dff6ed',
@@ -964,10 +1190,13 @@ const styles = StyleSheet.create({
     borderColor: '#ead5ff',
   },
   quickActionText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
     color: '#334155',
     textAlign: 'center',
+  },
+  quickActionTextCompact: {
+    fontSize: 9,
   },
   quickActionTextWhatsapp: {
     color: '#166534',
@@ -975,20 +1204,69 @@ const styles = StyleSheet.create({
   quickActionTextInstagram: {
     color: '#7c3aed',
   },
-  deleteButton: {
-    backgroundColor: '#fee2e2',
-    borderRadius: 12,
+  cardActionsColumn: {
+    alignItems: 'stretch',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  cardActionsColumnCompact: {
+    gap: 5,
+  },
+  sideActionButton: {
+    minWidth: 78,
+    borderRadius: 11,
     paddingHorizontal: 10,
-    paddingVertical: 9,
-    alignSelf: 'flex-start',
-    marginTop: 2,
+    paddingVertical: 8,
     borderWidth: 1,
+    alignItems: 'center',
+  },
+  sideActionButtonCompact: {
+    minWidth: 60,
+    paddingHorizontal: 8,
+    paddingVertical: 7,
+    borderRadius: 10,
+  },
+  sideActionButtonText: {
+    fontWeight: '800',
+    fontSize: 11,
+  },
+  sideActionButtonTextCompact: {
+    fontSize: 10,
+  },
+  sideActionButtonWarning: {
+    backgroundColor: '#fff7ed',
+    borderColor: '#fdba74',
+  },
+  sideActionButtonTextWarning: {
+    color: '#c2410c',
+  },
+  sideActionButtonSuccess: {
+    backgroundColor: '#dcfce7',
+    borderColor: '#86efac',
+  },
+  sideActionButtonTextSuccess: {
+    color: '#166534',
+  },
+  sideActionButtonDanger: {
+    backgroundColor: '#fee2e2',
     borderColor: '#fecaca',
   },
-  deleteButtonText: {
+  sideActionButtonTextDanger: {
     color: '#b91c1c',
-    fontWeight: '800',
-    fontSize: 12,
+  },
+  statusBadgeBlocked: {
+    backgroundColor: '#fff7ed',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#fdba74',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    flexShrink: 0,
+  },
+  statusBadgeBlockedText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#c2410c',
   },
   emptyCard: {
     backgroundColor: '#ffffff',

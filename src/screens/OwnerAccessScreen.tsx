@@ -36,6 +36,9 @@ export function OwnerAccessScreen() {
   const registerLastNameRef = useRef<TextInput | null>(null);
   const registerSalonNameRef = useRef<TextInput | null>(null);
   const registerBusinessPhoneRef = useRef<TextInput | null>(null);
+  const registerStreetLineRef = useRef<TextInput | null>(null);
+  const registerCityRef = useRef<TextInput | null>(null);
+  const registerPostalCodeRef = useRef<TextInput | null>(null);
   const registerActivityCategoryRef = useRef<TextInput | null>(null);
   const registerEmailRef = useRef<TextInput | null>(null);
   const registerPasswordRef = useRef<TextInput | null>(null);
@@ -48,6 +51,9 @@ export function OwnerAccessScreen() {
   const [registerLastName, setRegisterLastName] = useState('');
   const [registerSalonName, setRegisterSalonName] = useState('');
   const [registerBusinessPhone, setRegisterBusinessPhone] = useState('');
+  const [registerStreetLine, setRegisterStreetLine] = useState('');
+  const [registerCity, setRegisterCity] = useState('');
+  const [registerPostalCode, setRegisterPostalCode] = useState('');
   const [registerActivityCategory, setRegisterActivityCategory] = useState('');
   const [registerEmail, setRegisterEmail] = useState('');
   const [registerPassword, setRegisterPassword] = useState('');
@@ -66,15 +72,23 @@ export function OwnerAccessScreen() {
       registerLastName.trim() !== '' &&
       registerSalonName.trim() !== '' &&
       registerBusinessPhone.trim() !== '' &&
+      registerStreetLine.trim() !== '' &&
+      registerCity.trim() !== '' &&
+      registerPostalCode.trim() !== '' &&
+      registerActivityCategory.trim() !== '' &&
       registerEmail.trim() !== '' &&
       registerPassword.trim() !== '',
     [
+      registerActivityCategory,
       registerBusinessPhone,
+      registerCity,
       registerEmail,
       registerFirstName,
       registerLastName,
       registerPassword,
+      registerPostalCode,
       registerSalonName,
+      registerStreetLine,
     ]
   );
   const canSubmitReset = useMemo(() => resetEmail.trim() !== '', [resetEmail]);
@@ -110,6 +124,9 @@ export function OwnerAccessScreen() {
       lastName: registerLastName,
       salonName: registerSalonName,
       businessPhone: registerBusinessPhone,
+      streetLine: registerStreetLine,
+      city: registerCity,
+      postalCode: registerPostalCode,
       activityCategory: registerActivityCategory,
       email: registerEmail,
       password: registerPassword,
@@ -483,6 +500,44 @@ export function OwnerAccessScreen() {
                   value={registerBusinessPhone}
                   onChangeText={setRegisterBusinessPhone}
                   returnKeyType="next"
+                  onSubmitEditing={() => registerStreetLineRef.current?.focus()}
+                  blurOnSubmit={false}
+                />
+
+                <TextInput
+                  ref={registerStreetLineRef}
+                  style={styles.input}
+                  placeholder="Via e n. civico"
+                  placeholderTextColor="#98a2b3"
+                  value={registerStreetLine}
+                  onChangeText={setRegisterStreetLine}
+                  returnKeyType="next"
+                  onSubmitEditing={() => registerCityRef.current?.focus()}
+                  blurOnSubmit={false}
+                />
+
+                <TextInput
+                  ref={registerCityRef}
+                  style={styles.input}
+                  placeholder="Città"
+                  placeholderTextColor="#98a2b3"
+                  value={registerCity}
+                  onChangeText={setRegisterCity}
+                  autoCapitalize="words"
+                  returnKeyType="next"
+                  onSubmitEditing={() => registerPostalCodeRef.current?.focus()}
+                  blurOnSubmit={false}
+                />
+
+                <TextInput
+                  ref={registerPostalCodeRef}
+                  style={styles.input}
+                  placeholder="CAP"
+                  placeholderTextColor="#98a2b3"
+                  keyboardType="number-pad"
+                  value={registerPostalCode}
+                  onChangeText={setRegisterPostalCode}
+                  returnKeyType="next"
                   onSubmitEditing={() => registerActivityCategoryRef.current?.focus()}
                   blurOnSubmit={false}
                 />
@@ -490,10 +545,11 @@ export function OwnerAccessScreen() {
                 <TextInput
                   ref={registerActivityCategoryRef}
                   style={styles.input}
-                  placeholder="Categoria attivita (opzionale)"
+                  placeholder="Categoria attivita"
                   placeholderTextColor="#98a2b3"
                   value={registerActivityCategory}
                   onChangeText={setRegisterActivityCategory}
+                  autoCapitalize="characters"
                   returnKeyType="next"
                   onSubmitEditing={() => registerEmailRef.current?.focus()}
                   blurOnSubmit={false}
