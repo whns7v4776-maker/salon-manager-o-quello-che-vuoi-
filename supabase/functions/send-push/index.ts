@@ -17,6 +17,17 @@ type ExpoPushResult = {
 
 const EXPO_PUSH_ENDPOINT = 'https://exp.host/--/api/v2/push/send';
 
+const getEnvValue = (...keys: string[]) => {
+  for (const key of keys) {
+    const value = Deno.env.get(key);
+    if (value?.trim()) {
+      return value;
+    }
+  }
+
+  return null;
+};
+
 Deno.serve(async (request) => {
   try {
     if (request.method !== 'POST') {
@@ -26,14 +37,20 @@ Deno.serve(async (request) => {
       });
     }
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const supabaseUrl = getEnvValue('SUPABASE_URL', 'URL');
+    const serviceRoleKey = getEnvValue('SUPABASE_SERVICE_ROLE_KEY', 'SERVICE_ROLE_KEY');
 
     if (!supabaseUrl || !serviceRoleKey) {
-      return new Response(JSON.stringify({ error: 'missing_supabase_env' }), {
+      return new Response(
+        JSON.stringify({
+          error: 'missing_supabase_env',
+          required: ['SUPABASE_URL or URL', 'SUPABASE_SERVICE_ROLE_KEY or SERVICE_ROLE_KEY'],
+        }),
+        {
         status: 500,
         headers: { 'content-type': 'application/json' },
-      });
+        }
+      );
     }
 
     const body = await request.json().catch(() => ({}));

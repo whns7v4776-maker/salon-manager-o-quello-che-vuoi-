@@ -48,6 +48,7 @@ export default function JoinSalonScreen() {
 
   useEffect(() => {
     let active = true;
+    let redirectTimeout: ReturnType<typeof setTimeout> | null = null;
 
     const run = async () => {
       try {
@@ -72,7 +73,7 @@ export default function JoinSalonScreen() {
         setValid(true);
         setSalonName(resolved.workspace.salonName);
 
-        setTimeout(() => {
+        redirectTimeout = setTimeout(() => {
           router.replace({
             pathname: '/cliente',
             params: { salon: normalizedCode },
@@ -95,6 +96,9 @@ export default function JoinSalonScreen() {
 
     return () => {
       active = false;
+      if (redirectTimeout) {
+        clearTimeout(redirectTimeout);
+      }
     };
   }, [normalizedCode, resolveSalonByCode]);
 

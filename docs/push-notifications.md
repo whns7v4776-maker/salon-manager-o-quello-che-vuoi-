@@ -43,8 +43,8 @@ Questa base implementa le push Expo con coda backend su Supabase.
 2. Deploy edge function:
    - `supabase functions deploy send-push`
 3. Configura secret (se mancanti):
-   - `SUPABASE_URL`
-   - `SUPABASE_SERVICE_ROLE_KEY`
+  - `SUPABASE_URL` oppure `URL`
+  - `SUPABASE_SERVICE_ROLE_KEY` oppure `SERVICE_ROLE_KEY`
 
 ## Esecuzione periodica invio push
 
@@ -66,4 +66,5 @@ Puoi usare:
 - La sync backend richiede sempre un `workspace_id` valido UUID.
 - Se il workspace e ancora locale-only (id non UUID), il token resta registrato sul device ma non viene scritto su backend.
 - Le nuove RPC pubbliche servono a sostenere il flusso cliente reale e il backoffice locale senza dipendere obbligatoriamente da una sessione Supabase autenticata.
+- La function `send-push` accetta sia i secret con prefisso `SUPABASE_` sia i nomi brevi `URL` e `SERVICE_ROLE_KEY`.
 - In produzione, assicurati di configurare correttamente i certificati/APNs/FCM nel progetto Expo/EAS.
