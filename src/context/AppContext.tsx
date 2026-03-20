@@ -38,6 +38,7 @@ const STORAGE_KEYS = {
   availability_settings: 'salon_manager_availability_settings',
   operatori: 'salon_manager_operatori',
   macchinari: 'salon_manager_macchinari',
+  onboarding_completed: 'salon_manager_onboarding_completed',
   daily_auto_cashout: 'salon_manager_daily_auto_cashout',
 };
 
@@ -288,6 +289,10 @@ type AppContextType = {
   isAuthenticated: boolean;
   biometricEnabled: boolean;
   setBiometricEnabled: React.Dispatch<React.SetStateAction<boolean>>;
+  hasCompletedOnboarding: boolean;
+  showOnboarding: boolean;
+  completeOnboarding: () => void;
+  reopenOnboarding: () => void;
   unlockOwnerAccountWithBiometric: () => Promise<{ ok: boolean; error?: string }>;
   loginOwnerAccount: (
     email: string,
@@ -379,6 +384,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [appLanguage, setAppLanguage] = useState<AppLanguage>('it');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const [salonAccountEmail, setSalonAccountEmail] = useState('');
   const [salonWorkspace, setSalonWorkspace] = useState<SalonWorkspace>(
     createDefaultWorkspace('')
@@ -422,9 +429,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setRichiestePrenotazione([]);
     setAvailabilitySettings(normalizeAvailabilitySettings());
     setBiometricEnabled(false);
+    setHasCompletedOnboarding(false);
+    setShowOnboarding(false);
     setMessaggioEventoTemplate(
       'Ciao! Ti aspetto a {evento} il {data} alle {ora}. Scrivimi per conferma.'
     );
+  }, []);
+
+  const completeOnboarding = React.useCallback(() => {
+    setHasCompletedOnboarding(true);
+    setShowOnboarding(false);
+  }, []);
+
+  const reopenOnboarding = React.useCallback(() => {
+    setShowOnboarding(true);
   }, []);
 
   useEffect(() => {
@@ -594,6 +612,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const biometricEnabledSalvato = await AsyncStorage.getItem(
           buildScopedStorageKey(STORAGE_KEYS.biometric_enabled, salonAccountEmail)
         );
+        const onboardingCompletedSalvato = await AsyncStorage.getItem(
+          buildScopedStorageKey(STORAGE_KEYS.onboarding_completed, salonAccountEmail)
+        );
         const templateEventiSalvato = await AsyncStorage.getItem(
           buildScopedStorageKey(STORAGE_KEYS.eventi_template, salonAccountEmail)
         );
@@ -630,6 +651,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
             : normalizeAvailabilitySettings()
         );
         setBiometricEnabled(biometricEnabledSalvato === 'true');
+        setHasCompletedOnboarding(onboardingCompletedSalvato === 'true');
+        setShowOnboarding(onboardingCompletedSalvato !== 'true');
         setMessaggioEventoTemplate(
           templateEventiSalvato ??
             'Ciao! Ti aspetto a {evento} il {data} alle {ora}. Scrivimi per conferma.'
@@ -648,6 +671,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setRichiestePrenotazione([]);
         setAvailabilitySettings(normalizeAvailabilitySettings());
         setBiometricEnabled(false);
+        setHasCompletedOnboarding(false);
+        setShowOnboarding(false);
         setMessaggioEventoTemplate(
           'Ciao! Ti aspetto a {evento} il {data} alle {ora}. Scrivimi per conferma.'
         );
@@ -826,6 +851,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       biometricEnabled ? 'true' : 'false'
     );
   }, [biometricEnabled, isLoaded, salonAccountEmail]);
+
+  useEffect(() => {
+    if (!isLoaded || !salonAccountEmail) return;
+    AsyncStorage.setItem(
+      buildScopedStorageKey(STORAGE_KEYS.onboarding_completed, salonAccountEmail),
+      hasCompletedOnboarding ? 'true' : 'false'
+    );
+  }, [hasCompletedOnboarding, isLoaded, salonAccountEmail]);
 
   useEffect(() => {
     if (!isLoaded || !salonAccountEmail) return;
@@ -1411,6 +1444,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         isAuthenticated,
         biometricEnabled,
         setBiometricEnabled,
+        hasCompletedOnboarding,
+        showOnboarding,
+        completeOnboarding,
+        reopenOnboarding,
         unlockOwnerAccountWithBiometric,
         loginOwnerAccount,
         registerOwnerAccount,

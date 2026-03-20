@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { ModuleHeroHeader } from '../../components/module-hero-header';
+import { OnboardingModal } from '../../components/onboarding-modal';
 import { ClearableTextInput } from '../../components/ui/clearable-text-input';
 import { useAppContext } from '../../src/context/AppContext';
 import { salonNameFontOptions } from '../../src/lib/fonts';
@@ -101,6 +102,8 @@ export default function HomeScreen() {
     setBiometricEnabled,
     switchSalonAccount,
     appLanguage,
+    showOnboarding,
+    completeOnboarding,
   } = useAppContext();
 
   const [loadingSalon, setLoadingSalon] = useState(false);
@@ -147,7 +150,6 @@ export default function HomeScreen() {
 
   const appuntamentiIncassati = appuntamenti.filter((item) => item.incassato).length;
   const appuntamentiDaIncassare = appuntamenti.filter((item) => !item.incassato).length;
-
   const valoreDaIncassare = useMemo(
     () =>
       appuntamenti
@@ -167,7 +169,6 @@ export default function HomeScreen() {
 
     const [nome, count] =
       Object.entries(counts).sort((first, second) => second[1] - first[1])[0] ?? [];
-
     if (!nome || !count) return null;
 
     const servizio = servizi.find((item) => item.nome === nome);
@@ -343,6 +344,39 @@ export default function HomeScreen() {
     cityInput,
     postalCodeInput,
   ].filter((value) => value.trim() !== '').length;
+
+  const profileSections = [
+    {
+      key: 'identity',
+      title: 'Identita salone',
+      subtitle: 'Nome, categoria e insegna del salone.',
+      completed:
+        salonNameInput.trim() !== '' &&
+        activityCategoryInput.trim() !== '' &&
+        salonNameFontVariantInput.trim() !== '',
+    },
+    {
+      key: 'contacts',
+      title: 'Contatti',
+      subtitle: 'Numero aziendale per clienti e comunicazioni.',
+      completed: businessPhoneInput.trim() !== '',
+    },
+    {
+      key: 'address',
+      title: 'Indirizzo',
+      subtitle: 'Via, citta e CAP del salone.',
+      completed:
+        streetLineInput.trim() !== '' && cityInput.trim() !== '' && postalCodeInput.trim() !== '',
+    },
+    {
+      key: 'account',
+      title: 'Account e stato',
+      subtitle: 'Profilo attivo e stato workspace.',
+      completed: accountEmailInput.trim() !== '' && Boolean(salonWorkspace.subscriptionStatus),
+    },
+  ];
+
+  const completedProfileSections = profileSections.filter((item) => item.completed).length;
 
   const brandName =
   salonNameInput.trim() ? toUppercaseField(salonNameInput) : 'SALON PRO';
@@ -759,20 +793,18 @@ const openFrontendPreviewForAdmin = useCallback(() => {
               <Text
                 style={[
                   styles.sectionTitle,
-                  styles.sectionTitleCentered,
                   styles.profileAccordionTitle,
                 ]}
               >
-                {tApp(appLanguage, 'home_edit_profile')}
+                Profilo salone
               </Text>
               <Text
                 style={[
                   styles.sectionSubtext,
-                  styles.sectionSubtextCentered,
                   styles.profileAccordionSubtext,
                 ]}
               >
-                {'Qui trovi i dati del salone salvati in registrazione. Puoi aprire il blocco e modificarli quando vuoi.'}
+                Moduli piu compatti per compilare tutto senza perdersi in un form lungo.
               </Text>
             </View>
             <View style={styles.profileAccordionIconWrap}>
@@ -786,10 +818,10 @@ const openFrontendPreviewForAdmin = useCallback(() => {
 
           <View style={styles.profilePreviewCard}>
             <View style={styles.profilePreviewHeader}>
-              <Text style={styles.profilePreviewEyebrow}>Profilo salone</Text>
+              <Text style={styles.profilePreviewEyebrow}>Preview salone</Text>
               <Text style={styles.profilePreviewProgress}>
                 {profiloSaloneCompleto
-                  ? 'Contatti e indirizzo salvati'
+                  ? `${completedProfileSections}/4 moduli completi`
                   : `${requiredFieldsFilled}/6 campi obbligatori`}
               </Text>
             </View>
@@ -810,6 +842,19 @@ const openFrontendPreviewForAdmin = useCallback(() => {
             <Text style={styles.profilePreviewMeta}>
               {activityCategoryInput.trim() || 'Categoria libera'}
             </Text>
+            <View style={styles.profileProgressRow}>
+              {profileSections.map((section) => (
+                <View key={section.key} style={styles.profileProgressItem}>
+                  <View
+                    style={[
+                      styles.profileProgressDot,
+                      section.completed && styles.profileProgressDotCompleted,
+                    ]}
+                  />
+                  <Text style={styles.profileProgressLabel}>{section.title}</Text>
+                </View>
+              ))}
+            </View>
             <View style={styles.profilePreviewInfoRow}>
               <View style={styles.profilePreviewInfoPill}>
                 <Ionicons name="call-outline" size={14} color="#475569" />
@@ -827,193 +872,260 @@ const openFrontendPreviewForAdmin = useCallback(() => {
           </View>
 
           {showProfileSection ? (
-            <>
-              <View style={styles.profileEditorCard}>
-                <Text style={styles.profileEditorTitle}>Dati salone</Text>
-                <Text style={styles.profileEditorCaption}>
-                  Registrazione e Home usano gli stessi dati. Qui li puoi rivedere e correggere in un unico blocco.
-                </Text>
+            <View style={styles.profileEditorCard}>
+              <Text style={styles.profileEditorTitle}>Compila il profilo del salone</Text>
+              <Text style={styles.profileEditorCaption}>
+                Blocchi separati, campi piu compatti e salvataggio chiaro. Tutto qui, senza dispersione.
+              </Text>
 
-                <View style={styles.profileSectionDivider} />
+              <View style={styles.profileModuleStack}>
+                <View style={styles.profileModuleCard}>
+                  <View style={styles.profileModuleHeader}>
+                    <View style={styles.profileModuleTextWrap}>
+                      <Text style={styles.profileModuleTitle}>Identita salone</Text>
+                      <Text style={styles.profileModuleCaption}>Nome, categoria e insegna.</Text>
+                    </View>
+                    <View style={styles.profileModuleBadge}>
+                      <Text style={styles.profileModuleBadgeText}>
+                        {profileSections[0]?.completed ? 'Completo' : 'Da finire'}
+                      </Text>
+                    </View>
+                  </View>
 
-                <Text style={styles.profileSectionTitle}>Identita salone</Text>
-                <Text style={styles.profileSectionCaption}>
-                  Nome pubblico e categoria con cui il salone viene mostrato nell&apos;app.
-                </Text>
-
-                <Text style={styles.fieldLabel}>Nome salone</Text>
-                <ClearableTextInput
-                  ref={salonNameFieldRef}
-                  style={[styles.accountInput, !canEditSalonProfile && styles.accountInputLocked]}
-                  value={salonNameInput}
-                  onChangeText={setSalonNameInput}
-                  placeholder={tApp(appLanguage, 'auth_salon_name_placeholder')}
-                  placeholderTextColor="#8f8f8f"
-                  editable={canEditSalonProfile}
-                  autoCapitalize="words"
-                  returnKeyType="next"
-                  onSubmitEditing={() => activityCategoryFieldRef.current?.focus()}
-                  blurOnSubmit={false}
-                />
-
-                <Text style={styles.fieldLabel}>Categoria attivita</Text>
-                <ClearableTextInput
-                  ref={activityCategoryFieldRef}
-                  style={[styles.accountInput, !canEditSalonProfile && styles.accountInputLocked]}
-                  value={activityCategoryInput}
-                  onChangeText={(value) => setActivityCategoryInput(toUppercaseField(value))}
-                  placeholder="Categoria attivita"
-                  placeholderTextColor="#8f8f8f"
-                  editable={canEditSalonProfile}
-                  autoCapitalize="characters"
-                  returnKeyType="next"
-                  onSubmitEditing={() => businessPhoneFieldRef.current?.focus()}
-                  blurOnSubmit={false}
-                />
-
-                <View style={styles.profileSectionDivider} />
-
-                <Text style={styles.profileSectionTitle}>Contatti e indirizzo</Text>
-                <Text style={styles.profileSectionCaption}>
-                  Questi campi sono obbligatori e vengono usati per attivare correttamente il salone.
-                </Text>
-
-                <Text style={styles.fieldLabel}>Cellulare azienda</Text>
-                <ClearableTextInput
-                  ref={businessPhoneFieldRef}
-                  style={[styles.accountInput, !canEditSalonProfile && styles.accountInputLocked]}
-                  value={businessPhoneInput}
-                  onChangeText={setBusinessPhoneInput}
-                  placeholder={tApp(appLanguage, 'auth_business_phone_placeholder')}
-                  keyboardType="phone-pad"
-                  placeholderTextColor="#8f8f8f"
-                  editable={canEditSalonProfile}
-                  returnKeyType="next"
-                  onSubmitEditing={() => streetLineFieldRef.current?.focus()}
-                  blurOnSubmit={false}
-                />
-
-                <Text style={styles.fieldLabel}>Via, nome strada e civico</Text>
-                <ClearableTextInput
-                  ref={streetLineFieldRef}
-                  style={[styles.accountInput, !canEditSalonProfile && styles.accountInputLocked]}
-                  value={streetLineInput}
-                  onChangeText={(value) => setStreetLineInput(toUppercaseField(value))}
-                  placeholder="Via Roma 1"
-                  placeholderTextColor="#8f8f8f"
-                  editable={canEditSalonProfile}
-                  autoCapitalize="characters"
-                  returnKeyType="next"
-                  onSubmitEditing={() => cityFieldRef.current?.focus()}
-                  blurOnSubmit={false}
-                />
-
-                <View style={styles.formRow}>
-                  <View style={styles.formColumn}>
-                    <Text style={styles.fieldLabel}>{tApp(appLanguage, 'common_city')}</Text>
+                  <View style={styles.compactFieldBlock}>
+                    <Text style={styles.fieldLabel}>Nome salone</Text>
                     <ClearableTextInput
-                      ref={cityFieldRef}
-                      style={[
-                        styles.accountInput,
-                        !canEditSalonProfile && styles.accountInputLocked,
-                      ]}
-                      value={cityInput}
-                      onChangeText={(value) => setCityInput(toUppercaseField(value))}
-                      placeholder={tApp(appLanguage, 'common_city')}
+                      ref={salonNameFieldRef}
+                      style={[styles.accountInput, !canEditSalonProfile && styles.accountInputLocked]}
+                      value={salonNameInput}
+                      onChangeText={setSalonNameInput}
+                      placeholder={tApp(appLanguage, 'auth_salon_name_placeholder')}
                       placeholderTextColor="#8f8f8f"
                       editable={canEditSalonProfile}
-                      autoCapitalize="characters"
+                      autoCapitalize="words"
                       returnKeyType="next"
-                      onSubmitEditing={() => postalCodeFieldRef.current?.focus()}
+                      onSubmitEditing={() => activityCategoryFieldRef.current?.focus()}
                       blurOnSubmit={false}
                     />
                   </View>
 
-                  <View style={[styles.formColumn, styles.formColumnCompact]}>
-                    <Text style={styles.fieldLabel}>{tApp(appLanguage, 'common_postal_code')}</Text>
+                  <View style={styles.compactFieldBlock}>
+                    <Text style={styles.fieldLabel}>Categoria attivita</Text>
                     <ClearableTextInput
-                      ref={postalCodeFieldRef}
-                      style={[
-                        styles.accountInput,
-                        !canEditSalonProfile && styles.accountInputLocked,
-                      ]}
-                      value={postalCodeInput}
-                      onChangeText={setPostalCodeInput}
-                      placeholder={tApp(appLanguage, 'common_postal_code')}
-                      keyboardType="number-pad"
+                      ref={activityCategoryFieldRef}
+                      style={[styles.accountInput, !canEditSalonProfile && styles.accountInputLocked]}
+                      value={activityCategoryInput}
+                      onChangeText={(value) => setActivityCategoryInput(toUppercaseField(value))}
+                      placeholder="Categoria attivita"
+                      placeholderTextColor="#8f8f8f"
+                      editable={canEditSalonProfile}
+                      autoCapitalize="characters"
+                      returnKeyType="next"
+                      onSubmitEditing={() => businessPhoneFieldRef.current?.focus()}
+                      blurOnSubmit={false}
+                    />
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.fontDropdownButton}
+                    onPress={() => setShowFontPicker((current) => !current)}
+                    activeOpacity={0.9}
+                  >
+                    <View style={styles.fontDropdownTextWrap}>
+                      <Text style={styles.profileSectionTitle}>Font insegna</Text>
+                      <Text style={styles.profileSectionCaption}>
+                        {salonNameFontOptions.find((item) => item.key === salonNameFontVariantInput)?.label}
+                      </Text>
+                    </View>
+                    <View style={styles.profileAccordionIconWrap}>
+                      <Ionicons
+                        name={showFontPicker ? 'chevron-up' : 'chevron-down'}
+                        size={20}
+                        color="#334155"
+                      />
+                    </View>
+                  </TouchableOpacity>
+
+                  {showFontPicker ? (
+                    <View style={styles.profileFontSelectorGrid}>
+                      {salonNameFontOptions.map((option) => (
+                        <TouchableOpacity
+                          key={option.key}
+                          style={[
+                            styles.profileFontChip,
+                            salonNameFontVariantInput === option.key && styles.profileFontChipActive,
+                          ]}
+                          onPress={() => setSalonNameFontVariantInput(option.key)}
+                          activeOpacity={0.9}
+                          disabled={!canEditSalonProfile}
+                        >
+                          <Text
+                            style={[
+                              styles.profileFontChipText,
+                              { fontFamily: option.family },
+                              salonNameFontVariantInput === option.key && styles.profileFontChipTextActive,
+                            ]}
+                          >
+                            {option.label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  ) : null}
+                </View>
+
+                <View style={styles.profileModuleCard}>
+                  <View style={styles.profileModuleHeader}>
+                    <View style={styles.profileModuleTextWrap}>
+                      <Text style={styles.profileModuleTitle}>Contatti</Text>
+                      <Text style={styles.profileModuleCaption}>Numero aziendale chiaro e pronto all'uso.</Text>
+                    </View>
+                    <View style={styles.profileModuleBadge}>
+                      <Text style={styles.profileModuleBadgeText}>
+                        {profileSections[1]?.completed ? 'Completo' : 'Da finire'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.compactFieldBlock}>
+                    <Text style={styles.fieldLabel}>Cellulare azienda</Text>
+                    <ClearableTextInput
+                      ref={businessPhoneFieldRef}
+                      style={[styles.accountInput, !canEditSalonProfile && styles.accountInputLocked]}
+                      value={businessPhoneInput}
+                      onChangeText={setBusinessPhoneInput}
+                      placeholder={tApp(appLanguage, 'auth_business_phone_placeholder')}
+                      keyboardType="phone-pad"
+                      placeholderTextColor="#8f8f8f"
+                      editable={canEditSalonProfile}
+                      returnKeyType="next"
+                      onSubmitEditing={() => streetLineFieldRef.current?.focus()}
+                      blurOnSubmit={false}
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.profileModuleCard}>
+                  <View style={styles.profileModuleHeader}>
+                    <View style={styles.profileModuleTextWrap}>
+                      <Text style={styles.profileModuleTitle}>Indirizzo</Text>
+                      <Text style={styles.profileModuleCaption}>Via, citta e CAP in un blocco compatto.</Text>
+                    </View>
+                    <View style={styles.profileModuleBadge}>
+                      <Text style={styles.profileModuleBadgeText}>
+                        {profileSections[2]?.completed ? 'Completo' : 'Da finire'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.compactFieldBlock}>
+                    <Text style={styles.fieldLabel}>Via, nome strada e civico</Text>
+                    <ClearableTextInput
+                      ref={streetLineFieldRef}
+                      style={[styles.accountInput, !canEditSalonProfile && styles.accountInputLocked]}
+                      value={streetLineInput}
+                      onChangeText={(value) => setStreetLineInput(toUppercaseField(value))}
+                      placeholder="Via Roma 1"
+                      placeholderTextColor="#8f8f8f"
+                      editable={canEditSalonProfile}
+                      autoCapitalize="characters"
+                      returnKeyType="next"
+                      onSubmitEditing={() => cityFieldRef.current?.focus()}
+                      blurOnSubmit={false}
+                    />
+                  </View>
+
+                  <View style={styles.formRow}>
+                    <View style={styles.formColumn}>
+                      <Text style={styles.fieldLabel}>{tApp(appLanguage, 'common_city')}</Text>
+                      <ClearableTextInput
+                        ref={cityFieldRef}
+                        style={[styles.accountInput, !canEditSalonProfile && styles.accountInputLocked]}
+                        value={cityInput}
+                        onChangeText={(value) => setCityInput(toUppercaseField(value))}
+                        placeholder={tApp(appLanguage, 'common_city')}
+                        placeholderTextColor="#8f8f8f"
+                        editable={canEditSalonProfile}
+                        autoCapitalize="characters"
+                        returnKeyType="next"
+                        onSubmitEditing={() => postalCodeFieldRef.current?.focus()}
+                        blurOnSubmit={false}
+                      />
+                    </View>
+
+                    <View style={[styles.formColumn, styles.formColumnCompact]}>
+                      <Text style={styles.fieldLabel}>{tApp(appLanguage, 'common_postal_code')}</Text>
+                      <ClearableTextInput
+                        ref={postalCodeFieldRef}
+                        style={[styles.accountInput, !canEditSalonProfile && styles.accountInputLocked]}
+                        value={postalCodeInput}
+                        onChangeText={setPostalCodeInput}
+                        placeholder={tApp(appLanguage, 'common_postal_code')}
+                        keyboardType="number-pad"
+                        placeholderTextColor="#8f8f8f"
+                        editable={canEditSalonProfile}
+                        returnKeyType="done"
+                        onSubmitEditing={Keyboard.dismiss}
+                      />
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.profileModuleCard}>
+                  <View style={styles.profileModuleHeader}>
+                    <View style={styles.profileModuleTextWrap}>
+                      <Text style={styles.profileModuleTitle}>Account e stato</Text>
+                      <Text style={styles.profileModuleCaption}>Email di lavoro e workspace sempre allineati.</Text>
+                    </View>
+                    <View style={styles.profileModuleBadge}>
+                      <Text style={styles.profileModuleBadgeText}>
+                        {profileSections[3]?.completed ? 'Completo' : 'Da finire'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.compactFieldBlock}>
+                    <Text style={styles.fieldLabel}>Email account</Text>
+                    <ClearableTextInput
+                      ref={accountEmailFieldRef}
+                      style={[styles.accountInput, !canEditSalonProfile && styles.accountInputLocked]}
+                      value={accountEmailInput}
+                      onChangeText={setAccountEmailInput}
+                      autoCapitalize="none"
+                      keyboardType="email-address"
+                      placeholder="email@salone.it"
                       placeholderTextColor="#8f8f8f"
                       editable={canEditSalonProfile}
                       returnKeyType="done"
                       onSubmitEditing={Keyboard.dismiss}
                     />
                   </View>
+
+                  <View style={styles.profilePreviewInfoRow}>
+                    <View style={styles.profilePreviewInfoPill}>
+                      <Ionicons name="card-outline" size={14} color="#475569" />
+                      <Text style={styles.profilePreviewInfoText}>{salonWorkspace.subscriptionPlan}</Text>
+                    </View>
+                    <View style={styles.profilePreviewInfoPill}>
+                      <Ionicons name="pulse-outline" size={14} color="#475569" />
+                      <Text style={styles.profilePreviewInfoText}>{salonWorkspace.subscriptionStatus}</Text>
+                    </View>
+                  </View>
                 </View>
-
-                <View style={styles.profileSectionDivider} />
-
-                <TouchableOpacity
-                  style={styles.fontDropdownButton}
-                  onPress={() => setShowFontPicker((current) => !current)}
-                  activeOpacity={0.9}
-                >
-                  <View style={styles.fontDropdownTextWrap}>
-                    <Text style={styles.profileSectionTitle}>Aspetto insegna</Text>
-                    <Text style={styles.profileSectionCaption}>
-                      Font attuale: {salonNameFontOptions.find((item) => item.key === salonNameFontVariantInput)?.label}
-                    </Text>
-                  </View>
-                  <View style={styles.profileAccordionIconWrap}>
-                    <Ionicons
-                      name={showFontPicker ? 'chevron-up' : 'chevron-down'}
-                      size={24}
-                      color="#334155"
-                    />
-                  </View>
-                </TouchableOpacity>
-
-                {showFontPicker ? (
-                  <View style={styles.profileFontSelectorGrid}>
-                    {salonNameFontOptions.map((option) => (
-                      <TouchableOpacity
-                        key={option.key}
-                        style={[
-                          styles.profileFontChip,
-                          salonNameFontVariantInput === option.key &&
-                            styles.profileFontChipActive,
-                        ]}
-                        onPress={() => setSalonNameFontVariantInput(option.key)}
-                        activeOpacity={0.9}
-                        disabled={!canEditSalonProfile}
-                      >
-                        <Text
-                          style={[
-                            styles.profileFontChipText,
-                            { fontFamily: option.family },
-                            salonNameFontVariantInput === option.key &&
-                              styles.profileFontChipTextActive,
-                          ]}
-                        >
-                          {option.label}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                ) : null}
               </View>
 
               <TouchableOpacity
-                style={[styles.previewButton, savingSalon && styles.buttonDisabled]}
+                style={[styles.previewButton, styles.profileSaveButton, savingSalon && styles.buttonDisabled]}
                 onPress={salvaDatiSalone}
                 activeOpacity={0.9}
                 disabled={savingSalon}
               >
+                <Text style={styles.profileSaveButtonEyebrow}>{completedProfileSections}/4 moduli pronti</Text>
                 <Text style={styles.previewButtonText}>
-                  {savingSalon
-                    ? 'Salvataggio...'
-                    : tApp(appLanguage, 'home_save_profile')}
+                  {savingSalon ? 'Salvataggio...' : 'Salva modifiche'}
                 </Text>
               </TouchableOpacity>
-            </>
+            </View>
           ) : null}
         </View>
 
@@ -1176,6 +1288,12 @@ const openFrontendPreviewForAdmin = useCallback(() => {
         </View>
         </View>
       </ScrollView>
+
+      <OnboardingModal
+        visible={showOnboarding}
+        onClose={completeOnboarding}
+        onComplete={completeOnboarding}
+      />
 
     </View>
   );
@@ -1667,6 +1785,55 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 14,
   },
+  profileModuleStack: {
+    gap: 12,
+  },
+  profileModuleCard: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: '#dbe4ec',
+    padding: 14,
+  },
+  profileModuleHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginBottom: 10,
+  },
+  profileModuleTextWrap: {
+    flex: 1,
+  },
+  profileModuleTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#0f172a',
+    marginBottom: 2,
+  },
+  profileModuleCaption: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#64748b',
+    fontWeight: '600',
+  },
+  profileModuleBadge: {
+    backgroundColor: '#ffffff',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#dbe4ec',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  profileModuleBadgeText: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#334155',
+  },
+  compactFieldBlock: {
+    width: '100%',
+    marginBottom: 4,
+  },
   profileSectionDivider: {
     height: 1,
     backgroundColor: '#e7edf4',
@@ -1741,6 +1908,39 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     textAlign: 'center',
   },
+  profileProgressRow: {
+    width: '100%',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 14,
+  },
+  profileProgressItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#dbe4ec',
+    borderRadius: 999,
+  },
+  profileProgressDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: '#cbd5e1',
+  },
+  profileProgressDotCompleted: {
+    backgroundColor: '#0f766e',
+  },
+  profileProgressLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#334155',
+  },
   profilePreviewInfoRow: {
     width: '100%',
     gap: 10,
@@ -1801,12 +2001,15 @@ const styles = StyleSheet.create({
   },
   fontDropdownButton: {
     width: '100%',
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     gap: 12,
+    marginTop: 8,
   },
   fontDropdownTextWrap: {
-    alignItems: 'center',
+    flex: 1,
+    alignItems: 'flex-start',
   },
   formRow: {
     flexDirection: 'row',
@@ -1824,17 +2027,17 @@ const styles = StyleSheet.create({
   },
   accountInput: {
     backgroundColor: '#f8fafc',
-    borderRadius: 18,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: '#dbe4ec',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 15,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
     fontWeight: '700',
     color: '#111111',
     marginTop: 0,
     width: '100%',
-    textAlign: 'center',
+    textAlign: 'left',
   },
   accountInputLocked: {
     opacity: 0.65,
@@ -1883,6 +2086,18 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#ffffff',
     textAlign: 'center',
+  },
+  profileSaveButton: {
+    marginTop: 16,
+    paddingVertical: 14,
+  },
+  profileSaveButtonEyebrow: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#cbd5e1',
+    textTransform: 'uppercase',
+    letterSpacing: 1.1,
+    marginBottom: 4,
   },
   accessWarningCard: {
     backgroundColor: '#fff7ed',

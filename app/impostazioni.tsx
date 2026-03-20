@@ -16,6 +16,7 @@ export default function ImpostazioniScreen() {
     setAppLanguage,
     biometricEnabled,
     setBiometricEnabled,
+    reopenOnboarding,
     logoutOwnerAccount,
     salonWorkspace,
     salonAccountEmail,
@@ -202,6 +203,24 @@ export default function ImpostazioniScreen() {
               );
             })}
           </View>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Onboarding</Text>
+          <Text style={styles.cardHint}>
+            Rivedi in qualsiasi momento la panoramica iniziale con QR, agenda e flusso operativo.
+          </Text>
+
+          <TouchableOpacity
+            style={styles.secondaryActionButton}
+            onPress={() => {
+              reopenOnboarding();
+              router.back();
+            }}
+            activeOpacity={0.9}
+          >
+            <Text style={styles.secondaryActionButtonText}>Riapri onboarding</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.card}>
@@ -408,6 +427,20 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     paddingVertical: 14,
     alignItems: 'center',
+  },
+  secondaryActionButton: {
+    marginTop: 14,
+    backgroundColor: '#f8fafc',
+    borderRadius: 18,
+    paddingVertical: 14,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#dbe4ec',
+  },
+  secondaryActionButtonText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#111827',
   },
   logoutButtonText: {
     fontSize: 15,
