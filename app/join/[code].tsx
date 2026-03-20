@@ -71,7 +71,8 @@ export default function JoinSalonScreen() {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" />
-        <Text style={styles.text}>Accesso all'area cliente del salone in corso...</Text>
+        <Text style={styles.loadingEyebrow}>Area cliente</Text>
+        <Text style={styles.text}>Sto preparando la pagina del tuo salone...</Text>
       </View>
     );
   }
@@ -80,6 +81,9 @@ export default function JoinSalonScreen() {
     return (
       <View style={styles.center}>
         <Text style={styles.error}>Codice salone non valido o mancante</Text>
+        <Text style={styles.note}>
+          Controlla il link ricevuto dal salone oppure torna alla home cliente per inserire un codice valido.
+        </Text>
         <TouchableOpacity style={styles.button} onPress={() => router.replace('/')}>
           <Text style={styles.buttonText}>Torna all'area cliente</Text>
         </TouchableOpacity>
@@ -89,9 +93,14 @@ export default function JoinSalonScreen() {
 
   return (
     <View style={styles.center}>
-      <Text style={styles.success}>Area cliente collegata</Text>
-      <Text style={styles.code}>{salonName || normalizedCode}</Text>
-      <Text style={styles.text}>Stai entrando nel salone come cliente.</Text>
+      <Text style={styles.loadingEyebrow}>Area cliente</Text>
+      <Text style={styles.success}>Benvenuto da {salonName || normalizedCode}</Text>
+      <Text style={styles.text}>
+        Continua come cliente per prenotare o gestire i tuoi appuntamenti.
+      </Text>
+      <Text style={styles.note}>
+        Stai entrando come cliente. Non serve creare un nuovo salone o accedere al gestionale.
+      </Text>
 
       <TouchableOpacity
         style={styles.button}
@@ -114,18 +123,30 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
-    backgroundColor: '#f4f4f4',
+    backgroundColor: '#eef4f8',
+  },
+  loadingEyebrow: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 1,
+    color: '#2563eb',
+    textTransform: 'uppercase',
+    marginBottom: 12,
   },
   text: {
     marginTop: 12,
     fontSize: 16,
-    color: '#444',
+    color: '#334155',
+    textAlign: 'center',
+    lineHeight: 24,
   },
   success: {
-    fontSize: 24,
+    fontSize: 32,
+    lineHeight: 38,
     fontWeight: '800',
-    color: '#15803d',
+    color: '#0f172a',
     textAlign: 'center',
+    maxWidth: 680,
   },
   error: {
     fontSize: 18,
@@ -133,20 +154,24 @@ const styles = StyleSheet.create({
     color: '#b91c1c',
     textAlign: 'center',
   },
-  code: {
-    marginTop: 10,
-    fontSize: 16,
-    color: '#111',
+  note: {
+    marginTop: 12,
+    fontSize: 14,
+    lineHeight: 21,
+    color: '#64748b',
+    textAlign: 'center',
+    maxWidth: 700,
   },
   button: {
-    marginTop: 20,
+    marginTop: 22,
     backgroundColor: '#111827',
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderRadius: 16,
   },
   buttonText: {
     color: '#fff',
+    fontSize: 15,
     fontWeight: '700',
   },
 });

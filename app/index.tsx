@@ -1,9 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
 import { Redirect, useRouter, type Href } from 'expo-router';
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   Keyboard,
   KeyboardAvoidingView,
+  LayoutChangeEvent,
   Platform,
   ScrollView,
   StyleSheet,
@@ -24,7 +24,9 @@ export default function PublicClientLandingScreen() {
   const router = useRouter();
   const responsive = useResponsiveLayout();
   const { isAuthenticated } = useAppContext();
+  const scrollRef = useRef<ScrollView | null>(null);
   const [salonCode, setSalonCode] = useState('');
+  const [codeSectionY, setCodeSectionY] = useState(0);
 
   if (Platform.OS !== 'web') {
     return <Redirect href={isAuthenticated ? BACKOFFICE_ROUTE : OWNER_ROUTE} />;
@@ -32,27 +34,39 @@ export default function PublicClientLandingScreen() {
 
   const normalizedSalonCode = useMemo(() => normalizeSalonCodeInput(salonCode), [salonCode]);
 
-  const openClientArea = () => {
-    if (normalizedSalonCode) {
-      router.push({
-        pathname: '/join/[code]',
-        params: { code: normalizedSalonCode },
-      });
+  const scrollToCodeSection = () => {
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollTo({ y: Math.max(codeSectionY - 18, 0), animated: true });
+    });
+  };
+
+  const handleCodeSectionLayout = (event: LayoutChangeEvent) => {
+    setCodeSectionY(event.nativeEvent.layout.y);
+  };
+
+  const openJoinWithCode = () => {
+    if (!normalizedSalonCode) {
+      scrollToCodeSection();
       return;
     }
 
+    router.push({
+      pathname: '/join/[code]',
+      params: { code: normalizedSalonCode },
+    });
+  };
+
+  const openClientArea = () => {
     router.push('/cliente');
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={undefined}
-    >
+    <KeyboardAvoidingView style={styles.container} behavior={undefined}>
       <View style={styles.backgroundGlowTop} />
       <View style={styles.backgroundGlowBottom} />
 
       <ScrollView
+        ref={scrollRef}
         style={styles.container}
         contentContainerStyle={[styles.content, { paddingHorizontal: responsive.horizontalPadding }]}
         keyboardDismissMode="on-drag"
@@ -62,56 +76,39 @@ export default function PublicClientLandingScreen() {
       >
         <View style={[styles.shell, { maxWidth: responsive.contentMaxWidth }]}> 
           <View style={styles.heroCard}>
-            <View style={styles.heroTopRow}>
-              <View style={styles.clientBadge}>
-                <Text style={styles.clientBadgeText}>Area cliente</Text>
-              </View>
-              <TouchableOpacity
-                style={styles.ownerLink}
-                onPress={() => router.push(OWNER_ROUTE)}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="briefcase-outline" size={15} color="#475569" />
-                <Text style={styles.ownerLinkText}>Ingresso titolare</Text>
-              </TouchableOpacity>
-            </View>
-
             <View style={styles.brandWrap}>
               <AppWordmark />
             </View>
 
-            <Text style={styles.eyebrow}>Prenotazioni online del salone</Text>
-            <Text style={styles.title}>Stai entrando come cliente, non nel gestionale.</Text>
+            <Text style={styles.eyebrow}>Area prenotazioni cliente</Text>
+            <Text style={styles.title}>Prenota il tuo appuntamento in pochi secondi</Text>
             <Text style={styles.subtitle}>
-              Usa il link o il QR ricevuto dal salone. Se hai solo il codice salone, inseriscilo qui sotto per aprire direttamente la tua area cliente.
+              Scegli il tuo salone, prenota il servizio e gestisci facilmente i tuoi appuntamenti.
             </Text>
 
-            <View style={styles.highlightRow}>
-              <View style={styles.highlightCardPrimary}>
-                <Text style={styles.highlightTitle}>Prenota appuntamento</Text>
-                <Text style={styles.highlightText}>Scegli servizio, data e orario disponibili.</Text>
-              </View>
-              <View style={styles.highlightCardSecondary}>
-                <Text style={styles.highlightTitle}>Gestisci prenotazioni</Text>
-                <Text style={styles.highlightText}>Controlla richieste, conferme e modifiche.</Text>
-              </View>
+            <View style={styles.heroActionRow}>
+              <TouchableOpacity style={styles.primaryButton} onPress={scrollToCodeSection} activeOpacity={0.9}>
+                <Text style={styles.primaryButtonText}>Prenota ora</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.secondaryButton} onPress={openClientArea} activeOpacity={0.88}>
+                <Text style={styles.secondaryButtonText}>Accedi area cliente</Text>
+              </TouchableOpacity>
             </View>
+
+            <TouchableOpacity style={styles.inlineLinkButton} onPress={scrollToCodeSection} activeOpacity={0.8}>
+              <Text style={styles.inlineLinkText}>Hai un codice salone? Inseriscilo qui</Text>
+            </TouchableOpacity>
           </View>
 
-          <View style={styles.accessCard}>
-            <View style={styles.accessHeaderRow}>
-              <View style={styles.accessIconWrap}>
-                <Ionicons name="qr-code-outline" size={20} color="#1d4ed8" />
-              </View>
-              <View style={styles.accessHeaderTextWrap}>
-                <Text style={styles.accessTitle}>Apri il tuo salone</Text>
-                <Text style={styles.accessSubtitle}>Inserisci il codice salone ricevuto dal professionista oppure continua con il link cliente.</Text>
-              </View>
-            </View>
+          <View style={styles.accessCard} onLayout={handleCodeSectionLayout}>
+            <Text style={styles.accessTitle}>Entra nel tuo salone</Text>
+            <Text style={styles.accessSubtitle}>
+              Inserisci il codice che ti ha dato il salone per aprire la pagina corretta.
+            </Text>
 
             <TextInput
               style={styles.codeInput}
-              placeholder="Codice salone"
+              placeholder="Es. ABC123"
               placeholderTextColor="#94a3b8"
               autoCapitalize="characters"
               autoCorrect={false}
@@ -119,17 +116,48 @@ export default function PublicClientLandingScreen() {
               onChangeText={setSalonCode}
             />
 
-            <TouchableOpacity style={styles.primaryButton} onPress={openClientArea} activeOpacity={0.9}>
-              <Text style={styles.primaryButtonText}>Accedi area cliente</Text>
+            <TouchableOpacity
+              style={[styles.primaryButton, !normalizedSalonCode && styles.primaryButtonDisabled]}
+              onPress={openJoinWithCode}
+              activeOpacity={0.9}
+            >
+              <Text style={styles.primaryButtonText}>Continua</Text>
             </TouchableOpacity>
+          </View>
 
-            <TouchableOpacity style={styles.secondaryButton} onPress={openClientArea} activeOpacity={0.85}>
-              <Text style={styles.secondaryButtonText}>Prenota appuntamento</Text>
-            </TouchableOpacity>
+          <View style={styles.benefitsSection}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Tutto quello che ti serve, lato cliente</Text>
+              <Text style={styles.sectionSubtitle}>Un ingresso semplice per prenotare e tenere tutto sotto controllo.</Text>
+            </View>
 
-            <Text style={styles.supportText}>
-              Se il salone ti ha inviato un QR o un link diretto, aprilo pure: entrerai subito nello spazio cliente corretto.
+            <View style={styles.benefitsGrid}>
+              <View style={styles.benefitCard}>
+                <Text style={styles.benefitTitle}>Prenota facilmente</Text>
+                <Text style={styles.benefitText}>Apri il salone giusto, scegli il servizio e invia la richiesta in pochi passaggi.</Text>
+              </View>
+              <View style={styles.benefitCard}>
+                <Text style={styles.benefitTitle}>Gestisci gli appuntamenti</Text>
+                <Text style={styles.benefitText}>Controlla le tue richieste, lo stato delle conferme e le eventuali modifiche.</Text>
+              </View>
+              <View style={styles.benefitCard}>
+                <Text style={styles.benefitTitle}>Resta collegato al tuo salone</Text>
+                <Text style={styles.benefitText}>Tieni a portata di mano i riferimenti del salone e torna nella tua area cliente quando vuoi.</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.reassuranceCard}>
+            <Text style={styles.reassuranceTitle}>Una pagina semplice, pensata per i clienti</Text>
+            <Text style={styles.reassuranceText}>
+              Nessun gestionale complicato, nessuna configurazione tecnica. Qui puoi solo prenotare e gestire i tuoi appuntamenti nel tuo salone di fiducia.
             </Text>
+          </View>
+
+          <View style={styles.footer}>
+            <Text style={styles.footerLink}>Privacy</Text>
+            <Text style={styles.footerLink}>Supporto</Text>
+            <Text style={styles.footerLink}>Contatti</Text>
           </View>
         </View>
       </ScrollView>
@@ -172,7 +200,9 @@ const styles = StyleSheet.create({
   heroCard: {
     backgroundColor: '#ffffff',
     borderRadius: 32,
-    padding: 24,
+    paddingHorizontal: 24,
+    paddingTop: 28,
+    paddingBottom: 26,
     marginBottom: 18,
     shadowColor: '#0f172a',
     shadowOpacity: 0.08,
@@ -180,41 +210,8 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
     elevation: 4,
   },
-  heroTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 18,
-  },
-  clientBadge: {
-    backgroundColor: '#0f172a',
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-  },
-  clientBadgeText: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  ownerLink: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: '#e2e8f0',
-  },
-  ownerLinkText: {
-    color: '#334155',
-    fontSize: 12,
-    fontWeight: '800',
-  },
   brandWrap: {
-    marginBottom: 16,
+    marginBottom: 20,
   },
   eyebrow: {
     fontSize: 12,
@@ -225,93 +222,47 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   title: {
-    fontSize: 34,
-    lineHeight: 38,
+    fontSize: 38,
+    lineHeight: 42,
     fontWeight: '800',
     color: '#0f172a',
-    marginBottom: 12,
-    maxWidth: 720,
+    marginBottom: 14,
+    maxWidth: 760,
   },
   subtitle: {
     fontSize: 16,
     lineHeight: 24,
     color: '#475569',
-    marginBottom: 20,
+    marginBottom: 22,
     maxWidth: 760,
   },
-  highlightRow: {
+  heroActionRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
-  },
-  highlightCardPrimary: {
-    flexGrow: 1,
-    flexBasis: 220,
-    backgroundColor: '#dbeafe',
-    borderRadius: 24,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: '#93c5fd',
-  },
-  highlightCardSecondary: {
-    flexGrow: 1,
-    flexBasis: 220,
-    backgroundColor: '#dcfce7',
-    borderRadius: 24,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: '#86efac',
-  },
-  highlightTitle: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: '#0f172a',
-    marginBottom: 6,
-  },
-  highlightText: {
-    fontSize: 14,
-    lineHeight: 21,
-    color: '#334155',
   },
   accessCard: {
     backgroundColor: '#ffffff',
     borderRadius: 30,
     padding: 22,
+    marginBottom: 18,
     shadowColor: '#0f172a',
     shadowOpacity: 0.06,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 8 },
     elevation: 3,
   },
-  accessHeaderRow: {
-    flexDirection: 'row',
-    gap: 12,
-    alignItems: 'flex-start',
-    marginBottom: 16,
-  },
-  accessIconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#dbeafe',
-    borderWidth: 1,
-    borderColor: '#93c5fd',
-  },
-  accessHeaderTextWrap: {
-    flex: 1,
-  },
   accessTitle: {
     fontSize: 20,
     fontWeight: '800',
     color: '#0f172a',
-    marginBottom: 4,
+    marginBottom: 6,
   },
   accessSubtitle: {
     fontSize: 14,
     lineHeight: 21,
     color: '#64748b',
+    marginBottom: 16,
   },
   codeInput: {
     borderWidth: 1,
@@ -329,28 +280,109 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     paddingVertical: 15,
     alignItems: 'center',
-    marginBottom: 10,
   },
   primaryButtonText: {
     color: '#ffffff',
     fontSize: 15,
     fontWeight: '800',
   },
+  primaryButtonDisabled: {
+    opacity: 0.92,
+  },
   secondaryButton: {
     backgroundColor: '#e2e8f0',
     borderRadius: 18,
     paddingVertical: 15,
+    paddingHorizontal: 20,
     alignItems: 'center',
-    marginBottom: 14,
   },
   secondaryButtonText: {
     color: '#0f172a',
     fontSize: 15,
     fontWeight: '800',
   },
-  supportText: {
+  inlineLinkButton: {
+    alignSelf: 'flex-start',
+    marginTop: 14,
+    paddingVertical: 4,
+  },
+  inlineLinkText: {
     fontSize: 13,
     lineHeight: 20,
+    color: '#2563eb',
+    fontWeight: '700',
+  },
+  benefitsSection: {
+    marginBottom: 18,
+  },
+  sectionHeader: {
+    marginBottom: 14,
+  },
+  sectionTitle: {
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: '800',
+    color: '#0f172a',
+    marginBottom: 6,
+  },
+  sectionSubtitle: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: '#64748b',
+  },
+  benefitsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  benefitCard: {
+    flexGrow: 1,
+    flexBasis: 220,
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#d7e2ea',
+  },
+  benefitTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0f172a',
+    marginBottom: 8,
+  },
+  benefitText: {
+    fontSize: 14,
+    lineHeight: 21,
+    color: '#475569',
+  },
+  reassuranceCard: {
+    backgroundColor: '#0f172a',
+    borderRadius: 30,
+    padding: 24,
+    marginBottom: 22,
+  },
+  reassuranceTitle: {
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: '800',
+    color: '#ffffff',
+    marginBottom: 10,
+  },
+  reassuranceText: {
+    fontSize: 15,
+    lineHeight: 23,
+    color: '#cbd5e1',
+  },
+  footer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 18,
+    paddingBottom: 10,
+  },
+  footerLink: {
+    fontSize: 13,
+    fontWeight: '700',
     color: '#64748b',
   },
 });
